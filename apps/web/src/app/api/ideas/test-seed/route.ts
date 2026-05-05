@@ -21,7 +21,17 @@ async function requireUser() {
  *
  * Body: { projectId?: string, autoApprove?: boolean (default true) }
  * Returns: { ideaId, videoId | null }
+ *
+ * Note: when `autoApprove` is true, the idea metadata is seeded with default
+ * `asset_choices` (all-fresh) so test videos exercise the new visual-assets
+ * pipeline. The worker validates this with `AssetChoicesSchema` and falls back
+ * to defaults if anything is wrong.
  */
+const DEFAULT_ASSET_CHOICES = {
+  hook: { mode: 'fresh' as const },
+  reveal: { mode: 'fresh' as const },
+  cta: { mode: 'fresh' as const },
+};
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
@@ -86,7 +96,11 @@ export async function POST(req: NextRequest) {
         format: 'tip',
         estimated_duration: 45,
         status: 'draft',
-        metadata: { source: 'test-seed', hook_type: pick.hook_type },
+        metadata: {
+          source: 'test-seed',
+          hook_type: pick.hook_type,
+          asset_choices: DEFAULT_ASSET_CHOICES,
+        },
       })
       .select('id, hook, format, estimated_duration, status, created_at, project_id')
       .single();
