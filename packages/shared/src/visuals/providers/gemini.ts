@@ -1,6 +1,13 @@
-import { GoogleGenAI, PersonGeneration } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 
-/** Input for {@link generateImageGemini}. */
+/**
+ * Input for {@link generateImageGemini}.
+ *
+ * Uses the **Gemini 2.5 Flash Image** model (a.k.a. "Nano Banana") — the public
+ * image generation model accessible via the Gemini API with no allowlist
+ * required. NOT to be confused with `imagen-4.0-generate-001` (Vertex AI),
+ * which is gated and requires per-project access approval.
+ */
 export interface GeminiGenInput {
   /** Final prompt text (already includes style + negative tags). */
   prompt: string;
@@ -10,28 +17,35 @@ export interface GeminiGenInput {
   aspectRatio?: '9:16' | '1:1';
 }
 
-/** Successful Gemini / Imagen image generation result. */
+/** Successful Gemini image generation result. */
 export interface GeminiGenOutput {
-  /** Raw image bytes (PNG). */
+  /** Raw image bytes (PNG or JPEG depending on what the model returns). */
   bytes: Buffer;
-  /** Hardcoded for the 9:16 vertical preset we request. */
+  /** Approximate output dimensions (Nano Banana doesn't return exact dims). */
   width: number;
   height: number;
-  /** USD cost — Imagen 4 standard pricing as of 2026-05. */
+  /** USD cost — Nano Banana pricing as of 2026-05. */
   costUsd: number;
 }
 
-/** Imagen 4 standard pricing: $0.04 per image (spec value). */
-const GEMINI_IMAGEN_4_USD_PER_IMAGE = 0.04;
+/**
+ * Nano Banana pricing: $30 per 1M output tokens; each image ≈ 1290 tokens
+ * → ≈ $0.039 per image. We round to $0.04 for circuit-breaker accounting.
+ */
+const NANO_BANANA_USD_PER_IMAGE = 0.04;
+
+const DEFAULT_MODEL = 'gemini-2.5-flash-image';
 
 /**
- * Generate a single hero image with Gemini / Imagen.
+ * Generate a single hero image with Gemini 2.5 Flash Image (Nano Banana).
  *
  * - Reads `GOOGLE_AI_API_KEY` from `process.env`. Throws if missing.
- * - Returns PNG bytes (Node `Buffer`) decoded from the SDK's base64 payload.
+ * - Returns image bytes (Node `Buffer`) decoded from the SDK's base64 payload.
+ * - Default model: `gemini-2.5-flash-image`. Override via `ASSETS_GEMINI_MODEL`.
  *
- * Pricing as of 2026-05: Imagen 4 = $0.04/image. Override the model via
- * `ASSETS_GEMINI_MODEL` env var if needed (defaults to `imagen-4.0-generate-001`).
+ * Aspect ratio is communicated to the model via the prompt text since
+ * `generateContent` doesn't accept a structured aspect param for this model.
+ * The dimensions returned in {@link GeminiGenOutput} are nominal targets.
  */
 export async function generateImageGemini(input: GeminiGenInput): Promise<GeminiGenOutput> {
   const apiKey = process.env['GOOGLE_AI_API_KEY'];
@@ -40,33 +54,46 @@ export async function generateImageGemini(input: GeminiGenInput): Promise<Gemini
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  const model = process.env['ASSETS_GEMINI_MODEL'] ?? 'imagen-4.0-generate-001';
+  const model = process.env['ASSETS_GEMINI_MODEL'] ?? DEFAULT_MODEL;
   const aspectRatio = input.aspectRatio ?? '9:16';
 
-  const result = await ai.models.generateImages({
+  // Nano Banana takes aspect-ratio as part of the prompt because the
+  // generateContent endpoint has no structured aspectRatio parameter.
+  const promptWithAspect =
+    `${input.prompt}\n\n` +
+    `Render as a vertical ${aspectRatio} (${aspectRatio === '9:16' ? '1080x1920' : '1024x1024'}) composition.`;
+
+  const response = await ai.models.generateContent({
     model,
-    prompt: input.prompt,
+    contents: promptWithAspect,
     config: {
-      numberOfImages: 1,
-      aspectRatio,
-      personGeneration: PersonGeneration.ALLOW_ADULT,
+      // Tell the model we want an image back, not text.
+      responseModalities: ['IMAGE'],
     },
   });
 
-  const generated = result.generatedImages?.[0]?.image;
-  if (!generated?.imageBytes) {
-    const reason = result.generatedImages?.[0]?.raiFilteredReason;
-    throw new Error(`gemini_no_image${reason ? `: ${reason}` : ''}`);
+  // Walk candidate parts to find the inline image payload.
+  const parts = response.candidates?.[0]?.content?.parts ?? [];
+  const imagePart = parts.find((p) => {
+    const mt = p.inlineData?.mimeType ?? '';
+    return mt.startsWith('image/');
+  });
+
+  if (!imagePart?.inlineData?.data) {
+    // Some failure modes return text describing why (RAI policy, prompt too vague, etc.)
+    const textPart = parts.find((p) => p.text);
+    const reason = textPart?.text ?? 'unknown';
+    throw new Error(`gemini_no_image: ${reason.slice(0, 200)}`);
   }
 
-  const bytes = Buffer.from(generated.imageBytes, 'base64');
+  const bytes = Buffer.from(imagePart.inlineData.data, 'base64');
   const [width, height] = dimensionsFor(aspectRatio);
 
   return {
     bytes,
     width,
     height,
-    costUsd: GEMINI_IMAGEN_4_USD_PER_IMAGE,
+    costUsd: NANO_BANANA_USD_PER_IMAGE,
   };
 }
 
