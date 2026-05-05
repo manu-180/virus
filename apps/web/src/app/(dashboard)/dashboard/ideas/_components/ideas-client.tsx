@@ -14,6 +14,24 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { IdeaRow } from '../page';
+import { AssetChoicesForm } from './asset-choices-form';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import type { visuals } from '@virus/shared';
+
+type AssetChoices = visuals.AssetChoices;
+
+const DEFAULT_ASSET_CHOICES: AssetChoices = {
+  hook: { mode: 'fresh' },
+  reveal: { mode: 'fresh' },
+  cta: { mode: 'fresh' },
+};
 
 type StatusFilter = 'all' | 'draft' | 'approved' | 'rejected' | 'scripted';
 
@@ -58,6 +76,11 @@ export default function IdeasClient({
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
+  // Approve flow with asset choices dialog
+  const [approveTarget, setApproveTarget] = useState<IdeaRow | null>(null);
+  const [pendingChoices, setPendingChoices] =
+    useState<AssetChoices>(DEFAULT_ASSET_CHOICES);
+
   const filtered = useMemo(() => {
     if (filter === 'all') return ideas;
     return ideas.filter((i) => i.status === filter);
@@ -69,11 +92,23 @@ export default function IdeasClient({
     return c;
   }, [ideas]);
 
-  async function handleApprove(ideaId: string) {
+  function openApproveDialog(idea: IdeaRow) {
+    setError(null);
+    setPendingChoices(DEFAULT_ASSET_CHOICES);
+    setApproveTarget(idea);
+  }
+
+  async function confirmApprove() {
+    if (!approveTarget) return;
+    const ideaId = approveTarget.id;
     setBusyId(ideaId);
     setError(null);
     try {
-      const res = await fetch(`/api/ideas/${ideaId}/approve`, { method: 'POST' });
+      const res = await fetch(`/api/ideas/${ideaId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asset_choices: pendingChoices }),
+      });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -81,6 +116,7 @@ export default function IdeasClient({
       setIdeas((prev) =>
         prev.map((i) => (i.id === ideaId ? { ...i, status: 'approved' } : i)),
       );
+      setApproveTarget(null);
       startTransition(() => router.refresh());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al aprobar');
@@ -195,13 +231,67 @@ export default function IdeasClient({
                 <IdeaCard
                   idea={idea}
                   busy={busyId === idea.id}
-                  onApprove={() => handleApprove(idea.id)}
+                  onApprove={() => openApproveDialog(idea)}
                 />
               </motion.li>
             ))}
           </AnimatePresence>
         </ul>
       )}
+
+      <Dialog
+        open={approveTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && busyId === null) setApproveTarget(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Aprobar y generar video</DialogTitle>
+            <DialogDescription>
+              Elegí cómo querés que se generen los visuales de cada slot. Por defecto se
+              generan frescos.
+            </DialogDescription>
+          </DialogHeader>
+
+          {approveTarget && projectId && (
+            <AssetChoicesForm
+              projectId={projectId}
+              initial={DEFAULT_ASSET_CHOICES}
+              onChange={setPendingChoices}
+              disabled={busyId !== null}
+            />
+          )}
+
+          {!projectId && (
+            <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-200">
+              No hay proyecto activo — los visuales se generarán con defaults.
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="ghost"
+              onClick={() => setApproveTarget(null)}
+              disabled={busyId !== null}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={confirmApprove}
+              disabled={busyId !== null}
+              className="bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/40"
+            >
+              {busyId === approveTarget?.id ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Check className="size-3.5" />
+              )}
+              Confirmar aprobación
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
