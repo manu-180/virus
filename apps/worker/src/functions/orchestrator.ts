@@ -8,3 +8,5 @@ export { transcribeAudio } from './transcribe-audio.js';
 export { renderVideo } from './render-video.js';
 export { generateCaption } from './generate-caption.js';
 export { handleFailure } from './handle-failure.js';
+export { generateVisualAssets } from './generate-visual-assets.js';
+export { monitorAssetsFailureRate } from './monitor-assets-failure-rate.js';

@@ -64,6 +64,28 @@ export const generateVideoProjectAware = inngest.createFunction(
   },
 );
 
+// ---------------------------------------------------------------------------
+// Visual-assets pipeline stubs (full implementations in apps/worker).
+// These satisfy the type-level shape of the registry; the dev server uses
+// `apps/worker/src/index.ts` which registers the real functions.
+// ---------------------------------------------------------------------------
+
+export const generateVisualAssets = inngest.createFunction(
+  { id: 'generate-visual-assets', retries: 1, concurrency: 3 },
+  { event: 'virus/script.generated' },
+  async ({ event }) => {
+    return { videoId: event.data.videoId };
+  },
+);
+
+export const monitorAssetsFailureRate = inngest.createFunction(
+  { id: 'monitor-assets-failure-rate' },
+  { cron: '*/15 * * * *' },
+  async () => {
+    return { ok: true };
+  },
+);
+
 export const functions = [
   generateScript,
   synthesizeAudio,
@@ -72,4 +94,6 @@ export const functions = [
   generateCaption,
   handleFailure,
   generateVideoProjectAware,
+  generateVisualAssets,
+  monitorAssetsFailureRate,
 ];
