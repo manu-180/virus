@@ -1,0 +1,162 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* Colors — design token source of truth */
+  --color-bg: #0A0B0F;
+  --color-bg-elevated: #111318;
+  --color-bg-surface: #161A20;
+  --color-bg-surface-high: #1C2028;
+  --color-bg-surface-highest: #222830;
+  --color-border: #222830;
+  --color-border-subtle: #161A20;
+  --color-border-focus: #3ECF8E;
+  --color-text-primary: #F4F6F8;
+  --color-text-secondary: #A8B0BC;
+  --color-text-tertiary: #6B7280;
+  --color-text-disabled: #3F4551;
+  --color-accent: #3ECF8E;
+  --color-accent-hover: #34B27B;
+  --color-accent-fg: #0A0B0F;
+  --color-success: #34B27B;
+  --color-warning: #FFC000;
+  --color-danger: #E57373;
+  --color-info: #0175C2;
+  --color-status-pending: #A8B0BC;
+  --color-status-processing: #0175C2;
+  --color-status-ready: #3ECF8E;
+  --color-status-failed: #E57373;
+
+  /* Typography */
+  --font-sans: 'Oxanium', ui-sans-serif, system-ui;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Font sizes (rem) */
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 1.875rem;
+  --font-size-4xl: 2.25rem;
+  --font-size-5xl: 3rem;
+  --font-size-6xl: 4rem;
+  --font-size-7xl: 5rem;
+
+  /* Spacing */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-7: 28px;
+  --spacing-8: 32px;
+  --spacing-10: 40px;
+  --spacing-12: 48px;
+  --spacing-14: 56px;
+  --spacing-16: 64px;
+  --spacing-20: 80px;
+  --spacing-24: 96px;
+  --spacing-32: 128px;
+
+  /* Radius */
+  --radius-none: 0;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,0.55);
+}
+
+/* shadcn/ui semantic color mappings → Tailwind utilities */
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+}
+
+/* Design token overrides for shadcn semantic vars — dark premium theme always on */
+:root {
+  --background: #0A0B0F;
+  --foreground: #F4F6F8;
+  --card: #111318;
+  --card-foreground: #F4F6F8;
+  --popover: #161A20;
+  --popover-foreground: #F4F6F8;
+  --primary: #3ECF8E;
+  --primary-foreground: #0A0B0F;
+  --secondary: #1C2028;
+  --secondary-foreground: #F4F6F8;
+  --muted: #161A20;
+  --muted-foreground: #A8B0BC;
+  --accent: #3ECF8E;
+  --accent-foreground: #0A0B0F;
+  --destructive: #E57373;
+  --destructive-foreground: #F4F6F8;
+  --border: #222830;
+  --input: #222830;
+  --ring: #3ECF8E;
+  --radius: 0.75rem;
+  --sidebar: #111318;
+  --sidebar-foreground: #F4F6F8;
+  --sidebar-primary: #3ECF8E;
+  --sidebar-primary-foreground: #0A0B0F;
+  --sidebar-accent: #1C2028;
+  --sidebar-accent-foreground: #F4F6F8;
+  --sidebar-border: #222830;
+  --sidebar-ring: #3ECF8E;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-bg text-text-primary font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  html {
+    @apply font-sans;
+  }
+}

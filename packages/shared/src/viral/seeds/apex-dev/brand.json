@@ -1,0 +1,72 @@
+{
+  "projectId": "__seed_apex_dev__",
+  "brandName": "APEX",
+  "oneLiner": "Estudio de desarrollo de apps Flutter y webs Next.js en Argentina",
+  "audience": {
+    "who": "Founders y emprendedores LATAM 25-45 con MVP validado o idea técnicamente clara",
+    "where": "Argentina, Uruguay, Chile, México",
+    "pains": [
+      "Los devs no responden o desaparecen a mitad del proyecto",
+      "Presupuestos inflados sin garantía real de entrega",
+      "MVPs que no escalan cuando llegan usuarios reales",
+      "Tiempo perdido coordinando cambios de horario vía WhatsApp",
+      "Código de baja calidad que hay que reescribir 6 meses después",
+      "No encontrar seniority real: solo juniors disfrazados de seniors"
+    ]
+  },
+  "valueProps": [
+    "Delivery en semanas, no en meses",
+    "Stack moderno (Flutter + Next.js + Supabase) que escala desde el día 1",
+    "Seniority real: arquitectura limpia desde el primer commit",
+    "Precios transparentes en ARS con estimador interactivo sin surprises",
+    "3 meses de mantenimiento incluidos en todos los planes",
+    "Proyectos en producción como prueba de concepto: Assistify, BotLode, Contact Engine"
+  ],
+  "features": [
+    "Apps móviles iOS + Android con Flutter (código único, un solo proyecto)",
+    "Webs y landing pages con Next.js y SSR para SEO técnico",
+    "Tiendas online con MercadoPago y Stripe integrados",
+    "Chatbots WhatsApp con IA (BotLode / Botrive)",
+    "Bases de datos y autenticación con Supabase",
+    "Paneles de administración custom para gestión sin tocar código",
+    "Geolocalización y tracking en tiempo real",
+    "Sistema de agenda inteligente con Supabase y prevención de doble reserva",
+    "Integraciones: WhatsApp, Google Calendar, MercadoPago, Stripe",
+    "SEO técnico con schema.org, Core Web Vitals y sitemap dinámico"
+  ],
+  "caseStudies": [
+    {
+      "title": "Assistify — App de gestión para profesores",
+      "metric": "Sistema de autogestión de clases que elimina coordinación vía WhatsApp; publicada en iOS y Android en producción en assistify.lat"
+    },
+    {
+      "title": "BotLode — Ecosistema de bots IA",
+      "metric": "Plataforma SaaS de creación de chatbots sin código con 6 personalidades; en producción en botlode.com"
+    },
+    {
+      "title": "Contact Engine — Prospección B2B automatizada",
+      "metric": "Sistema multi-tenant de email + WhatsApp que detecta y contacta leads 24/7; modelo escalable para reventa como servicio"
+    },
+    {
+      "title": "Simon Mindset — Landing page profesional",
+      "metric": "Sitio optimizado para conversión con SEO técnico, formulario de contacto con auto-respuesta y botón WhatsApp; 3 meses mantenimiento incluidos"
+    }
+  ],
+  "voiceTone": "Directo, sin BS, técnico pero accesible. Energía contrarian cuando es warranted. Jerga tech mezclada con coloquial argentino. No locutor de radio, no dormido.",
+  "ctas": [
+    { "kind": "whatsapp", "value": "+5491124842720" },
+    { "kind": "web", "value": "apex-dev.com/cotizar" },
+    { "kind": "calendar", "value": "Agendar consulta gratis en apex-dev.com/contacto" }
+  ],
+  "doNotSay": [
+    "barato",
+    "rápido y fácil",
+    "promesas vacías",
+    "el mejor del mercado",
+    "garantizado al 100%",
+    "sin experiencia previa",
+    "en solo unos clicks",
+    "solución mágica"
+  ],
+  "parsedAt": "2026-05-04T00:00:00.000Z"
+}

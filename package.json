@@ -1,0 +1,21 @@
+{
+  "name": "virus",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "prettier": "^3.4.2",
+    "typescript": "^5.6.3"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=22"
+  }
+}

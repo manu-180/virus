@@ -1,0 +1,138 @@
+{
+  "totalDurationSec": 22,
+  "themeColor": "#3ECF8E",
+  "language": "es",
+  "audioUrl": "https://example.com/sample.mp3",
+  "musicMood": "lofi",
+  "variant": "dense",
+  "segments": [
+    {
+      "index": 0,
+      "role": "hook",
+      "startSec": 0,
+      "endSec": 2.5,
+      "voiceover": "Estás escribiendo useEffect mal. Y ni cuenta te das.",
+      "onScreenText": "useEffect\nmal escrito",
+      "visualCue": "hook-card-punch",
+      "soundEffect": "whoosh"
+    },
+    {
+      "index": 1,
+      "role": "setup",
+      "startSec": 2.5,
+      "endSec": 6,
+      "voiceover": "Si no tenés cleanup function, memory leak en producción asegurado.",
+      "visualCue": "code-block-typewriter",
+      "codeSnippet": {
+        "language": "tsx",
+        "code": "useEffect(() => {\n  const id = setInterval(tick, 1000);\n}, []);"
+      }
+    },
+    {
+      "index": 2,
+      "role": "development",
+      "startSec": 6,
+      "endSec": 13,
+      "voiceover": "El fix: retorná una función que cancela el intervalo. React la ejecuta cuando el componente se desmonta.",
+      "visualCue": "code-block-typewriter",
+      "codeSnippet": {
+        "language": "tsx",
+        "code": "useEffect(() => {\n  const id = setInterval(tick, 1000);\n  return () => clearInterval(id);\n}, []);"
+      },
+      "soundEffect": "click"
+    },
+    {
+      "index": 3,
+      "role": "mini_payoff",
+      "startSec": 13,
+      "endSec": 17,
+      "voiceover": "La función que retornás del useEffect es el cleanup. Se ejecuta automáticamente.",
+      "onScreenText": "return () => cleanup()",
+      "visualCue": "highlight-reveal"
+    },
+    {
+      "index": 4,
+      "role": "reveal",
+      "startSec": 17,
+      "endSec": 19.5,
+      "voiceover": "Así de simple. Memory leak resuelto.",
+      "onScreenText": "Memory leak\nresuelto ✓",
+      "visualCue": "hook-card-punch",
+      "soundEffect": "ding"
+    },
+    {
+      "index": 5,
+      "role": "cta",
+      "startSec": 19.5,
+      "endSec": 22,
+      "voiceover": "Seguime para más tips de React que tu equipo no te va a contar.",
+      "visualCue": "cta-card",
+      "soundEffect": "pop"
+    }
+  ],
+  "captions": {
+    "words": [
+      { "text": "Estás", "startMs": 0, "endMs": 280 },
+      { "text": "escribiendo", "startMs": 300, "endMs": 680 },
+      { "text": "useEffect", "startMs": 700, "endMs": 1300 },
+      { "text": "mal", "startMs": 1320, "endMs": 1700 },
+      { "text": "Y", "startMs": 1750, "endMs": 1900 },
+      { "text": "ni", "startMs": 1920, "endMs": 2050 },
+      { "text": "cuenta", "startMs": 2070, "endMs": 2350 },
+      { "text": "te", "startMs": 2370, "endMs": 2480 },
+      { "text": "das", "startMs": 2500, "endMs": 2900 },
+      { "text": "Si", "startMs": 2950, "endMs": 3100 },
+      { "text": "no", "startMs": 3120, "endMs": 3280 },
+      { "text": "tenés", "startMs": 3300, "endMs": 3700 },
+      { "text": "cleanup", "startMs": 3750, "endMs": 4200 },
+      { "text": "function", "startMs": 4250, "endMs": 4750 },
+      { "text": "memory", "startMs": 4850, "endMs": 5200 },
+      { "text": "leak", "startMs": 5230, "endMs": 5500 },
+      { "text": "en", "startMs": 5530, "endMs": 5670 },
+      { "text": "producción", "startMs": 5700, "endMs": 6300 },
+      { "text": "asegurado", "startMs": 6350, "endMs": 7000 },
+      { "text": "El", "startMs": 7100, "endMs": 7280 },
+      { "text": "fix", "startMs": 7310, "endMs": 7560 },
+      { "text": "retorná", "startMs": 7620, "endMs": 8050 },
+      { "text": "una", "startMs": 8080, "endMs": 8260 },
+      { "text": "función", "startMs": 8290, "endMs": 8720 },
+      { "text": "que", "startMs": 8750, "endMs": 8920 },
+      { "text": "cancela", "startMs": 8950, "endMs": 9400 },
+      { "text": "el", "startMs": 9430, "endMs": 9580 },
+      { "text": "intervalo", "startMs": 9610, "endMs": 10220 },
+      { "text": "React", "startMs": 10320, "endMs": 10680 },
+      { "text": "la", "startMs": 10710, "endMs": 10860 },
+      { "text": "ejecuta", "startMs": 10890, "endMs": 11340 },
+      { "text": "cuando", "startMs": 11370, "endMs": 11770 },
+      { "text": "el", "startMs": 11800, "endMs": 11950 },
+      { "text": "componente", "startMs": 11980, "endMs": 12700 },
+      { "text": "se", "startMs": 12730, "endMs": 12880 },
+      { "text": "desmonta", "startMs": 12910, "endMs": 13600 },
+      { "text": "La", "startMs": 13700, "endMs": 13900 },
+      { "text": "función", "startMs": 13930, "endMs": 14360 },
+      { "text": "que", "startMs": 14390, "endMs": 14560 },
+      { "text": "retornás", "startMs": 14590, "endMs": 15100 },
+      { "text": "del", "startMs": 15130, "endMs": 15300 },
+      { "text": "useEffect", "startMs": 15330, "endMs": 15980 },
+      { "text": "es", "startMs": 16010, "endMs": 16160 },
+      { "text": "el", "startMs": 16190, "endMs": 16340 },
+      { "text": "cleanup", "startMs": 16370, "endMs": 16900 },
+      { "text": "Se", "startMs": 17050, "endMs": 17220 },
+      { "text": "ejecuta", "startMs": 17250, "endMs": 17700 },
+      { "text": "automáticamente", "startMs": 17730, "endMs": 18600 },
+      { "text": "Así", "startMs": 18700, "endMs": 18960 },
+      { "text": "de", "startMs": 18990, "endMs": 19140 },
+      { "text": "simple", "startMs": 19170, "endMs": 19650 },
+      { "text": "Memory", "startMs": 19700, "endMs": 20030 },
+      { "text": "leak", "startMs": 20060, "endMs": 20350 },
+      { "text": "resuelto", "startMs": 20380, "endMs": 20950 },
+      { "text": "Seguime", "startMs": 21050, "endMs": 21420 },
+      { "text": "para", "startMs": 21450, "endMs": 21690 },
+      { "text": "más", "startMs": 21720, "endMs": 21960 },
+      { "text": "tips", "startMs": 21990, "endMs": 22000 }
+    ]
+  },
+  "brand": {
+    "handle": "@manunavarro"
+  }
+}

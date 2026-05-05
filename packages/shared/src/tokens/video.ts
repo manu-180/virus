@@ -1,0 +1,15 @@
+export const video = {
+  fps: 30,
+  width: 1080,
+  height: 1920,
+  safeTopPx: 250,
+  safeBottomPx: 350,
+  captionHighlightColor: '#FFD400',
+  captionDefaultColor: '#FFFFFF',
+  captionStrokeColor: '#000000',
+  captionStrokeWidth: 8,
+  codeFontSize: 44,
+  codeFontFamily: 'JetBrains Mono',
+  codeBg: '#0F1419',
+  codeAccent: '#3ECF8E',
+};

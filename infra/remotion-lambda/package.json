@@ -1,0 +1,16 @@
+{
+  "name": "@virus/remotion-lambda-deploy",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "tsx deploy.ts"
+  },
+  "dependencies": {
+    "@remotion/lambda": "^4.0.0",
+    "dotenv": "^16.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "@types/node": "^20.0.0"
+  }
+}

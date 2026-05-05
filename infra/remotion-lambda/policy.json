@@ -1,0 +1,120 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RemotionS3BucketScoped",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:PutObjectAcl",
+        "s3:PutObject",
+        "s3:CreateBucket",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:PutBucketAcl",
+        "s3:DeleteBucket",
+        "s3:PutBucketOwnershipControls",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:PutBucketPolicy"
+      ],
+      "Resource": [
+        "arn:aws:s3:::remotionlambda-*"
+      ]
+    },
+    {
+      "Sid": "RemotionS3ListAllBuckets",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListAllMyBuckets"
+      ],
+      "Resource": [
+        "arn:aws:s3:::*"
+      ]
+    },
+    {
+      "Sid": "RemotionLambdaFunctionScoped",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:InvokeAsync",
+        "lambda:InvokeFunction",
+        "lambda:DeleteFunction",
+        "lambda:PutFunctionEventInvokeConfig",
+        "lambda:CreateFunction",
+        "lambda:PutRuntimeManagementConfig",
+        "lambda:TagResource"
+      ],
+      "Resource": [
+        "arn:aws:lambda:*:*:function:remotion-render-*"
+      ]
+    },
+    {
+      "Sid": "RemotionLambdaGlobal",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:ListFunctions",
+        "lambda:GetFunction"
+      ],
+      "Resource": [
+        "*"
+      ]
+    },
+    {
+      "Sid": "RemotionLambdaLayer",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetLayerVersion"
+      ],
+      "Resource": [
+        "arn:aws:lambda:*:678892195805:layer:remotion-binaries-*"
+      ]
+    },
+    {
+      "Sid": "RemotionCloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": [
+        "arn:aws:logs:*:*:log-group:/aws/lambda/remotion-render-*"
+      ]
+    },
+    {
+      "Sid": "RemotionIAM",
+      "Effect": "Allow",
+      "Action": [
+        "iam:SimulatePrincipalPolicy",
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:role/remotion-lambda-role"
+      ]
+    },
+    {
+      "Sid": "RemotionIAMSimulate",
+      "Effect": "Allow",
+      "Action": [
+        "iam:SimulatePrincipalPolicy"
+      ],
+      "Resource": [
+        "*"
+      ]
+    },
+    {
+      "Sid": "RemotionServiceQuotas",
+      "Effect": "Allow",
+      "Action": [
+        "servicequotas:GetServiceQuota",
+        "servicequotas:GetAWSDefaultServiceQuota",
+        "servicequotas:RequestServiceQuotaIncrease",
+        "servicequotas:ListRequestedServiceQuotaChangeHistoryByQuota"
+      ],
+      "Resource": [
+        "*"
+      ]
+    }
+  ]
+}

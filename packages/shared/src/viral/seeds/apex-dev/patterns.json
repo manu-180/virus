@@ -1,0 +1,816 @@
+{
+  "projectId": "__seed_apex_dev__",
+  "language": "es-AR",
+  "parsedAt": "2026-05-04T00:00:00.000Z",
+  "hooks": [
+    {
+      "id": "h-001",
+      "text": "Estás escribiendo useEffect mal.",
+      "type": "shame_relief",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["reels", "tiktok"],
+      "exampleTopics": ["React cleanup functions", "memory leaks", "dependency arrays", "useEffect best practices"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-002",
+      "text": "Borrá node_modules. No lo necesitás más.",
+      "type": "shock_contrarian",
+      "estimatedEngagement": "viral",
+      "bestPlatforms": ["tiktok", "shorts"],
+      "exampleTopics": ["pnpm workspaces", "bun install", "package managers", "monorepos"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-003",
+      "text": "El 99% de los devs junior no sabe esto.",
+      "type": "curiosity_gap",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["reels", "tiktok"],
+      "exampleTopics": ["event loop", "closures", "hoisting", "async/await internals"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-004",
+      "text": "Este shortcut de VS Code te ahorra 2 horas al día.",
+      "type": "immediate_value",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["reels", "shorts"],
+      "exampleTopics": ["multi-cursor editing", "command palette", "code snippets", "keyboard shortcuts"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-005",
+      "text": "Cursor + Claude acaba de matar a Copilot. Te explico.",
+      "type": "shock_contrarian",
+      "estimatedEngagement": "viral",
+      "bestPlatforms": ["shorts", "tiktok"],
+      "exampleTopics": ["Cursor AI", "Claude Code", "GitHub Copilot", "AI coding tools comparison"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-006",
+      "text": "Construí un SaaS en 60 segundos con vibe coding.",
+      "type": "speed_build_demo",
+      "estimatedEngagement": "viral",
+      "bestPlatforms": ["tiktok", "reels"],
+      "exampleTopics": ["vibe coding", "Cursor Composer", "Next.js SaaS", "Supabase full-stack"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-007",
+      "text": "React Server Components rompió todo lo que sabías.",
+      "type": "fomo",
+      "estimatedEngagement": "medium",
+      "bestPlatforms": ["shorts"],
+      "exampleTopics": ["RSC", "Server Actions", "Next.js 15", "data fetching patterns"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-008",
+      "text": "Mirá este bug que costó 300 millones de dólares.",
+      "type": "storytelling",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["tiktok", "reels"],
+      "exampleTopics": ["Knight Capital bug", "production outages", "debugging stories", "postmortem"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-009",
+      "text": "Si tu código tiene esto, te van a rechazar en la entrevista.",
+      "type": "shame_relief",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["reels", "tiktok"],
+      "exampleTopics": ["anti-patterns", "var usage", "callback hell", "interview coding tips"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-010",
+      "text": "POV: te toca refactorizar código de 2015.",
+      "type": "identity_insider",
+      "estimatedEngagement": "medium",
+      "bestPlatforms": ["tiktok", "reels"],
+      "exampleTopics": ["legacy code", "jQuery spaghetti", "PHP refactor", "technical debt"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-011",
+      "text": "Probé 5 IDEs con IA y solo 1 sirve.",
+      "type": "immediate_value",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["shorts", "reels"],
+      "exampleTopics": ["Cursor IDE", "VS Code + Copilot", "Zed AI", "JetBrains AI", "WindSurf"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-012",
+      "text": "Dejá de usar console.log. Hacé esto en su lugar.",
+      "type": "shame_relief",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["tiktok", "reels"],
+      "exampleTopics": ["debugger statement", "VS Code debugger", "structured logging", "error tracking"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-013",
+      "text": "TypeScript en 100 segundos.",
+      "type": "immediate_value",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["shorts"],
+      "exampleTopics": ["tipos básicos", "utility types", "satisfies operator", "generics intro"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-014",
+      "text": "Esta API está secretamente filtrando tu data.",
+      "type": "shock_contrarian",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["tiktok", "shorts"],
+      "exampleTopics": ["API data leaks", "exposed secrets", "env vars security", "security headers"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-015",
+      "text": "Construí en 1 prompt lo que antes me llevaba 3 días.",
+      "type": "speed_build_demo",
+      "estimatedEngagement": "viral",
+      "bestPlatforms": ["reels", "tiktok"],
+      "exampleTopics": ["Claude Code agentic", "Cursor Agent", "spec-driven dev", "full-stack in one shot"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-016",
+      "text": "Si todavía usás var, este video es para vos.",
+      "type": "identity_insider",
+      "estimatedEngagement": "medium",
+      "bestPlatforms": ["tiktok"],
+      "exampleTopics": ["var vs let vs const", "hoisting", "temporal dead zone", "modern JS"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-017",
+      "text": "El framework que va a matar a Next.js.",
+      "type": "shock_contrarian",
+      "estimatedEngagement": "viral",
+      "bestPlatforms": ["shorts", "tiktok"],
+      "exampleTopics": ["Remix 2", "SvelteKit", "Astro 5", "TanStack Start"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-018",
+      "text": "Este snippet es ilegal y deberías saberlo.",
+      "type": "curiosity_gap",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["reels", "tiktok"],
+      "exampleTopics": ["prototype pollution", "eval() dangers", "XSS patterns", "security anti-patterns"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-019",
+      "text": "Antes vs después de aprender Git correctamente.",
+      "type": "immediate_value",
+      "estimatedEngagement": "medium",
+      "bestPlatforms": ["reels"],
+      "exampleTopics": ["git rebase", "git bisect", "conventional commits", "Git branching strategy"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-020",
+      "text": "Programadores senior odian este truco.",
+      "type": "curiosity_gap",
+      "estimatedEngagement": "medium",
+      "bestPlatforms": ["tiktok"],
+      "exampleTopics": ["JS one-liners", "array tricks", "CSS hacks", "Python shortcuts"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-021",
+      "text": "Probé Claude Code por una semana. Esto pasó.",
+      "type": "storytelling",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["shorts", "reels"],
+      "exampleTopics": ["Claude Code review", "autonomous coding", "MCP integration", "agentic dev workflow"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-022",
+      "text": "Tu primer commit dice todo sobre vos como dev.",
+      "type": "shame_relief",
+      "estimatedEngagement": "medium",
+      "bestPlatforms": ["tiktok"],
+      "exampleTopics": ["commit messages", "git history quality", "dev growth mindset", "code review culture"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-023",
+      "text": "Esta extensión de VS Code va a cambiar tu vida.",
+      "type": "immediate_value",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["reels", "tiktok"],
+      "exampleTopics": ["GitLens", "Error Lens", "Prettier config", "REST Client"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-024",
+      "text": "Por qué dejé Vim después de 5 años.",
+      "type": "storytelling",
+      "estimatedEngagement": "medium",
+      "bestPlatforms": ["shorts"],
+      "exampleTopics": ["Vim vs Neovim", "editor wars", "productivity tools", "developer workflow"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-025",
+      "text": "Mi setup de dev freelance que factura $5K/mes.",
+      "type": "identity_insider",
+      "estimatedEngagement": "viral",
+      "bestPlatforms": ["reels", "tiktok"],
+      "exampleTopics": ["freelance stack", "USD pricing LATAM", "remote work tools", "portfolio building"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-026",
+      "text": "Mirá lo que pasa si pegás esto en package.json.",
+      "type": "curiosity_gap",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["tiktok", "shorts"],
+      "exampleTopics": ["package.json scripts", "preinstall hooks", "engines field", "workspace protocols"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-027",
+      "text": "Este error de un caracter rompió Linux durante 10 años.",
+      "type": "storytelling",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["shorts"],
+      "exampleTopics": ["CVE vulnerabilities", "off-by-one errors", "kernel bugs", "security history"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-028",
+      "text": "Los devs argentinos están comiéndose el mercado USA.",
+      "type": "identity_insider",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["reels", "tiktok"],
+      "exampleTopics": ["LATAM dev talent", "USD remote salaries", "talent arbitrage", "freelance Argentina"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-029",
+      "text": "MCP en 60 segundos: lo que cambia para siempre.",
+      "type": "fomo",
+      "estimatedEngagement": "high",
+      "bestPlatforms": ["shorts"],
+      "exampleTopics": ["Model Context Protocol", "Claude MCP tools", "AI agent protocols", "tool use AI"],
+      "language": "es-AR"
+    },
+    {
+      "id": "h-030",
+      "text": "No hace falta saber programar para construir esto.",
+      "type": "shock_contrarian",
+      "estimatedEngagement": "viral",
+      "bestPlatforms": ["tiktok", "reels"],
+      "exampleTopics": ["vibe coding no-code", "Cursor Composer", "prompt engineering", "AI-first dev"],
+      "language": "es-AR"
+    }
+  ],
+  "formats": [
+    {
+      "id": "f-001",
+      "name": "X in 100 seconds",
+      "description": "Concepto + 5-10 bullets ultra rápidos en 60-100 segundos. Estilo Fireship.",
+      "optimalDurationSec": { "min": 60, "max": 100 },
+      "bestPlatforms": ["shorts", "reels"],
+      "realExample": "Fireship: React in 100 Seconds (1.6M+ views)",
+      "structureSegments": [
+        "Hook visual 0-3s: texto grande + gesto/zoom",
+        "Concepto intro 3-10s: qué es y por qué importa",
+        "Bullets rápidos 10-80s: 5-10 puntos clave en pantalla",
+        "Outro CTA 80-100s: seguir para más"
+      ]
+    },
+    {
+      "id": "f-002",
+      "name": "Lo estabas haciendo mal",
+      "description": "Código incorrecto → STOP → versión correcta. Hook de vergüenza/alivio.",
+      "optimalDurationSec": { "min": 25, "max": 45 },
+      "bestPlatforms": ["reels", "tiktok"],
+      "realExample": "You've been writing useEffect wrong",
+      "structureSegments": [
+        "Hook vergüenza 0-3s: 'Estás haciendo X mal'",
+        "Código incorrecto 3-15s: mostrar el error común",
+        "STOP + corrección 15-35s: la versión correcta con diff",
+        "CTA 35-45s: 'Guardá esto'"
+      ]
+    },
+    {
+      "id": "f-003",
+      "name": "Speed build",
+      "description": "Time-lapse de construcción con voiceover. Empieza con resultado final.",
+      "optimalDurationSec": { "min": 30, "max": 60 },
+      "bestPlatforms": ["shorts", "reels"],
+      "realExample": "Built ChatGPT clone in 60 seconds",
+      "structureSegments": [
+        "Resultado final 0-5s: el producto terminado funcionando",
+        "Prompt/inicio 5-15s: el punto de partida",
+        "Timelapse construcción 15-50s: el proceso acelerado",
+        "Demo final 50-60s: corriendo en producción"
+      ]
+    },
+    {
+      "id": "f-004",
+      "name": "Tip único",
+      "description": "1 truco, 1 pantalla, 1 comparación A/B. El formato más corto y efectivo.",
+      "optimalDurationSec": { "min": 12, "max": 25 },
+      "bestPlatforms": ["tiktok", "reels"],
+      "realExample": "VS Code shortcut nobody uses",
+      "structureSegments": [
+        "Hook 0-3s: el truco en una frase",
+        "Demostración A 3-12s: el problema o la versión lenta",
+        "Demostración B 12-22s: el atajo o la mejora",
+        "CTA 22-25s: 'Guardá esto'"
+      ]
+    },
+    {
+      "id": "f-005",
+      "name": "Before/After de productividad",
+      "description": "Comparación visual antes vs después. Optimizado para saves.",
+      "optimalDurationSec": { "min": 15, "max": 30 },
+      "bestPlatforms": ["tiktok", "reels"],
+      "realExample": "Refactor con map en lugar de for loop",
+      "structureSegments": [
+        "BEFORE código 0-8s: el código largo o complejo",
+        "Transición dramática 8-12s: zoom + sound effect",
+        "AFTER código 12-25s: la versión optimizada",
+        "CTA 25-30s: 'Etiquetá al dev que necesita esto'"
+      ]
+    },
+    {
+      "id": "f-006",
+      "name": "Tier list",
+      "description": "Frameworks/herramientas ordenados tier S-F. Alto engagement por debate.",
+      "optimalDurationSec": { "min": 30, "max": 60 },
+      "bestPlatforms": ["shorts", "tiktok"],
+      "realExample": "Tier list of JS frameworks 2026",
+      "structureSegments": [
+        "Intro 0-5s: 'Voy a rankear X herramientas'",
+        "Tier S-A 5-25s: los mejores con justificación rápida",
+        "Tier B-C 25-45s: los mediocres",
+        "Tier D-F controversia 45-55s: el take polémico",
+        "CTA debate 55-60s: '¿Estás de acuerdo?'"
+      ]
+    },
+    {
+      "id": "f-007",
+      "name": "Code Report / News Reaction",
+      "description": "Captura de tweet o noticia + reacción. Estilo Fireship Code Report.",
+      "optimalDurationSec": { "min": 45, "max": 90 },
+      "bestPlatforms": ["shorts"],
+      "realExample": "Fireship's The Code Report",
+      "structureSegments": [
+        "Titular 0-5s: la noticia en pantalla",
+        "Contexto 5-20s: por qué importa",
+        "Reacción 20-60s: tu opinión honesta",
+        "Opinión final 60-80s: el take",
+        "CTA 80-90s: '¿Qué pensás vos?'"
+      ]
+    },
+    {
+      "id": "f-008",
+      "name": "Tools I use daily",
+      "description": "Lista enumerada de herramientas con screencasts. Optimizado para saves.",
+      "optimalDurationSec": { "min": 30, "max": 45 },
+      "bestPlatforms": ["reels", "tiktok"],
+      "realExample": "5 VS Code extensions that 10x'd me",
+      "structureSegments": [
+        "Hook lista 0-3s: '5 herramientas que uso todos los días'",
+        "Herramienta 1-3 rápido 3-25s: demo veloz de cada una",
+        "Herramienta favorita con demo 25-40s: la más impactante",
+        "CTA 40-45s: 'Comentá cuál ya conocías'"
+      ]
+    },
+    {
+      "id": "f-009",
+      "name": "Tutorial mini-curso",
+      "description": "Parte 1/N con cliffhanger. Construye audiencia para serie de contenido.",
+      "optimalDurationSec": { "min": 45, "max": 60 },
+      "bestPlatforms": ["reels", "shorts"],
+      "realExample": "DevelopedByEd parte 1: animación CSS",
+      "structureSegments": [
+        "Hook + promesa 0-5s: qué vas a aprender hoy",
+        "Paso 1 5-20s: fundamento con demo",
+        "Paso 2 20-40s: construcción sobre lo anterior",
+        "Cliffhanger parte 2 40-55s: 'Pero hay un problema...'",
+        "CTA seguir 55-60s: 'Seguime para la parte 2'"
+      ]
+    },
+    {
+      "id": "f-010",
+      "name": "Roast / Hot take",
+      "description": "Opinión polémica sobre tech. Alto ratio comentarios/views.",
+      "optimalDurationSec": { "min": 20, "max": 40 },
+      "bestPlatforms": ["tiktok", "shorts"],
+      "realExample": "Theo: 'Next.js is dying'",
+      "structureSegments": [
+        "Take polémica 0-5s: la opinión sin filtros",
+        "Evidencia 1-2 puntos 5-25s: por qué tenés razón",
+        "Respuesta al debate 25-35s: anticipar el contraargumento",
+        "CTA comentá 35-40s: '¿Estás de acuerdo?'"
+      ]
+    },
+    {
+      "id": "f-011",
+      "name": "Day in the life",
+      "description": "POV de dev remoto/freelance. Muy efectivo para conseguir clientes.",
+      "optimalDurationSec": { "min": 30, "max": 60 },
+      "bestPlatforms": ["reels", "tiktok"],
+      "realExample": "Day in the life of a remote dev in Buenos Aires",
+      "structureSegments": [
+        "Hook mañana 0-5s: setup y primera tarea del día",
+        "Trabajo AM 5-20s: código, reuniones, tools",
+        "Cliente/reunión 20-40s: una interacción real (anon)",
+        "Resultado del día 40-55s: qué construiste",
+        "CTA aspira 55-60s: 'Esto es posible para vos también'"
+      ]
+    },
+    {
+      "id": "f-012",
+      "name": "AI prompt to result",
+      "description": "Prompt en pantalla + output animado. Muy efectivo para demos de AI tools.",
+      "optimalDurationSec": { "min": 20, "max": 40 },
+      "bestPlatforms": ["tiktok", "reels"],
+      "realExample": "Cursor built this Stripe integration in 3 prompts",
+      "structureSegments": [
+        "Prompt on-screen 0-5s: el prompt exacto visible",
+        "Generación en tiempo real 5-25s: el AI trabajando",
+        "Resultado funcional 25-35s: el output corriendo",
+        "CTA prompt 35-40s: 'Comentá PROMPT y te lo mando'"
+      ]
+    },
+    {
+      "id": "f-013",
+      "name": "Bug horror story",
+      "description": "Narrativa de un bug real o famoso. Máximo watch time del formato.",
+      "optimalDurationSec": { "min": 30, "max": 45 },
+      "bestPlatforms": ["tiktok"],
+      "realExample": "The $300M typo",
+      "structureSegments": [
+        "Hook shock 0-3s: la consecuencia dramática primero",
+        "Contexto el bug 3-15s: qué pasó exactamente",
+        "Consecuencias 15-30s: el impacto real",
+        "Lección aprendida 30-42s: qué hacer diferente",
+        "CTA historia tuya 42-45s: '¿Tu peor bug?'"
+      ]
+    },
+    {
+      "id": "f-014",
+      "name": "Comparison side-by-side",
+      "description": "Split screen Tool A vs Tool B. Alto saves y comentarios de debate.",
+      "optimalDurationSec": { "min": 30, "max": 45 },
+      "bestPlatforms": ["reels", "shorts"],
+      "realExample": "Cursor vs Claude Code refactor",
+      "structureSegments": [
+        "Hook comparación 0-5s: 'Cursor vs Claude Code'",
+        "Tool A demo 5-20s: el mismo problema con Tool A",
+        "Tool B demo 20-35s: el mismo problema con Tool B",
+        "Veredicto 35-42s: el ganador y por qué",
+        "CTA equipo 42-45s: '¿Qué equipo sos?'"
+      ]
+    },
+    {
+      "id": "f-015",
+      "name": "Meme mas leccion",
+      "description": "Imagen meme + tip técnico. Máximo alcance orgánico en Reels.",
+      "optimalDurationSec": { "min": 15, "max": 25 },
+      "bestPlatforms": ["reels", "tiktok"],
+      "realExample": "DevelopedByEd estilo meme programming",
+      "structureSegments": [
+        "Meme setup 0-5s: la imagen o situación reconocible",
+        "Punchline 5-10s: el remate del meme",
+        "Lección técnica 10-20s: el tip real detrás del meme",
+        "CTA 20-25s: 'Etiquetá al dev que se identifica'"
+      ]
+    }
+  ],
+  "topics": [
+    {
+      "id": "t-001",
+      "name": "Vibe coding (Karpathy, Cursor Composer)",
+      "category": "AI/Workflow",
+      "dominantEmotion": "Wonder/FOMO",
+      "productionDifficulty": 2,
+      "trendingUntil": "2026-12-31",
+      "relatedHookIds": ["h-006", "h-015", "h-030"]
+    },
+    {
+      "id": "t-002",
+      "name": "Cursor vs Claude Code vs Copilot",
+      "category": "AI Tools",
+      "dominantEmotion": "Tribalismo/Curiosidad",
+      "productionDifficulty": 3,
+      "trendingUntil": "2026-12-31",
+      "relatedHookIds": ["h-005", "h-011", "h-021"]
+    },
+    {
+      "id": "t-003",
+      "name": "MCP (Model Context Protocol)",
+      "category": "Agentic AI",
+      "dominantEmotion": "FOMO/Educational",
+      "productionDifficulty": 3,
+      "trendingUntil": "2026-12-31",
+      "relatedHookIds": ["h-029", "h-005", "h-003"]
+    },
+    {
+      "id": "t-004",
+      "name": "AI agents construyendo SaaS solos",
+      "category": "Agentic AI",
+      "dominantEmotion": "Wonder/Aspiracional",
+      "productionDifficulty": 4,
+      "trendingUntil": "2026-12-31",
+      "relatedHookIds": ["h-006", "h-015", "h-030"]
+    },
+    {
+      "id": "t-005",
+      "name": "Built X in N minutes con IA",
+      "category": "Speed build + AI",
+      "dominantEmotion": "Aspiracional",
+      "productionDifficulty": 3,
+      "trendingUntil": "2026-12-31",
+      "relatedHookIds": ["h-006", "h-015"]
+    },
+    {
+      "id": "t-006",
+      "name": "Next.js 15/16, RSC, Server Actions",
+      "category": "React/Frontend",
+      "dominantEmotion": "FOMO/Confusion",
+      "productionDifficulty": 3,
+      "trendingUntil": "2026-12-31",
+      "relatedHookIds": ["h-007", "h-017", "h-003"]
+    },
+    {
+      "id": "t-007",
+      "name": "TypeScript tricks (utility types, satisfies)",
+      "category": "TypeScript",
+      "dominantEmotion": "Insider/Valor",
+      "productionDifficulty": 2,
+      "trendingUntil": "2027-06-30",
+      "relatedHookIds": ["h-013", "h-009", "h-001"]
+    },
+    {
+      "id": "t-008",
+      "name": "Bun vs Node vs Deno 2",
+      "category": "Runtimes JS",
+      "dominantEmotion": "Tribalismo",
+      "productionDifficulty": 2,
+      "trendingUntil": "2026-12-31",
+      "relatedHookIds": ["h-002", "h-017"]
+    },
+    {
+      "id": "t-009",
+      "name": "Tailwind v4 / shadcn/ui",
+      "category": "CSS/UI",
+      "dominantEmotion": "Valor/Estetica",
+      "productionDifficulty": 2,
+      "trendingUntil": "2026-12-31",
+      "relatedHookIds": ["h-004", "h-023"]
+    },
+    {
+      "id": "t-010",
+      "name": "HTMX vs React - HTML is back",
+      "category": "Frontend/Contrarian",
+      "dominantEmotion": "Shock/Polemica",
+      "productionDifficulty": 2,
+      "trendingUntil": "2026-12-31",
+      "relatedHookIds": ["h-002", "h-017", "h-007"]
+    },
+    {
+      "id": "t-011",
+      "name": "Rust en produccion (49% empresas 2026)",
+      "category": "Systems/Backend",
+      "dominantEmotion": "Aspiracional",
+      "productionDifficulty": 3,
+      "trendingUntil": "2027-06-30",
+      "relatedHookIds": ["h-011", "h-028"]
+    },
+    {
+      "id": "t-012",
+      "name": "Zig, Go, Crystal - lenguajes alternativos",
+      "category": "Systems",
+      "dominantEmotion": "Curiosidad",
+      "productionDifficulty": 3,
+      "trendingUntil": "2027-06-30",
+      "relatedHookIds": ["h-011", "h-028"]
+    },
+    {
+      "id": "t-013",
+      "name": "Drizzle / Prisma / SQL crudo",
+      "category": "DB/ORM",
+      "dominantEmotion": "Tribalismo",
+      "productionDifficulty": 2,
+      "trendingUntil": "2027-06-30",
+      "relatedHookIds": ["h-012", "h-014"]
+    },
+    {
+      "id": "t-014",
+      "name": "Edge Functions / Vercel / Cloudflare Workers",
+      "category": "Serverless",
+      "dominantEmotion": "Valor",
+      "productionDifficulty": 3,
+      "trendingUntil": "2026-12-31",
+      "relatedHookIds": ["h-017", "h-007", "h-029"]
+    },
+    {
+      "id": "t-015",
+      "name": "Spec-driven development (agents.md)",
+      "category": "AI/Workflow",
+      "dominantEmotion": "Educational/FOMO",
+      "productionDifficulty": 3,
+      "trendingUntil": "2026-12-31",
+      "relatedHookIds": ["h-029", "h-015", "h-006"]
+    },
+    {
+      "id": "t-016",
+      "name": "VS Code vs Zed vs Cursor vs Neovim",
+      "category": "Editors",
+      "dominantEmotion": "Tribalismo",
+      "productionDifficulty": 2,
+      "trendingUntil": "2026-12-31",
+      "relatedHookIds": ["h-004", "h-011", "h-023"]
+    },
+    {
+      "id": "t-017",
+      "name": "Bug horror stories y outages",
+      "category": "Storytelling",
+      "dominantEmotion": "Shock",
+      "productionDifficulty": 4,
+      "trendingUntil": "2027-06-30",
+      "relatedHookIds": ["h-008", "h-027"]
+    },
+    {
+      "id": "t-018",
+      "name": "Day in the life de dev remoto",
+      "category": "Lifestyle",
+      "dominantEmotion": "Aspiracional",
+      "productionDifficulty": 4,
+      "trendingUntil": "2027-06-30",
+      "relatedHookIds": ["h-010", "h-025"]
+    },
+    {
+      "id": "t-019",
+      "name": "Setup tour - mecanico, monitor, desk",
+      "category": "Lifestyle/Hardware",
+      "dominantEmotion": "Aspiracional/Envy",
+      "productionDifficulty": 4,
+      "trendingUntil": "2027-06-30",
+      "relatedHookIds": ["h-025", "h-010"]
+    },
+    {
+      "id": "t-020",
+      "name": "Salarios dev USA vs LATAM",
+      "category": "Career/Money",
+      "dominantEmotion": "Identidad/Aspiracional",
+      "productionDifficulty": 2,
+      "trendingUntil": "2027-06-30",
+      "relatedHookIds": ["h-025", "h-028"]
+    },
+    {
+      "id": "t-021",
+      "name": "Resume tips y portfolio review",
+      "category": "Career",
+      "dominantEmotion": "Verguenza/Valor",
+      "productionDifficulty": 2,
+      "trendingUntil": "2027-06-30",
+      "relatedHookIds": ["h-009", "h-022"]
+    },
+    {
+      "id": "t-022",
+      "name": "Code review en publico (Roast my code)",
+      "category": "Educational/Roast",
+      "dominantEmotion": "Verguenza/Humor",
+      "productionDifficulty": 3,
+      "trendingUntil": "2027-06-30",
+      "relatedHookIds": ["h-001", "h-009"]
+    },
+    {
+      "id": "t-023",
+      "name": "CSS animations y UI satisfying",
+      "category": "Frontend/Visual",
+      "dominantEmotion": "Awe",
+      "productionDifficulty": 3,
+      "trendingUntil": "2027-06-30",
+      "relatedHookIds": ["h-004", "h-023"]
+    },
+    {
+      "id": "t-024",
+      "name": "Web3 esta muerto / Web3 esta vivo",
+      "category": "Hot take",
+      "dominantEmotion": "Polemica",
+      "productionDifficulty": 1,
+      "trendingUntil": "2026-12-31",
+      "relatedHookIds": ["h-017", "h-002"]
+    },
+    {
+      "id": "t-025",
+      "name": "Open source maintainer drama",
+      "category": "Community",
+      "dominantEmotion": "Polemica/Emocional",
+      "productionDifficulty": 2,
+      "trendingUntil": "2026-12-31",
+      "relatedHookIds": ["h-017", "h-002"]
+    }
+  ],
+  "pacing": {
+    "audioSpeedMultiplier": { "min": 1.1, "max": 1.3 },
+    "cutEverySec": { "min": 3, "max": 5 },
+    "ideaDensitySec": 4,
+    "musicBpm": { "min": 80, "max": 110 },
+    "voiceLufs": -15,
+    "musicLufs": -20,
+    "duckingDb": 8
+  },
+  "visualElements": [
+    {
+      "name": "captions_on",
+      "retentionLift": 0.12,
+      "notes": "+12% retención con subtítulos siempre on (Meta data). Keywords en color amarillo/verde."
+    },
+    {
+      "name": "code_highlight",
+      "retentionLift": 0.08,
+      "notes": "Zoom y línea highlight en bloques de código de 3+ segundos."
+    },
+    {
+      "name": "counter_animated",
+      "retentionLift": 0.06,
+      "notes": "Conteo regresivo '5 cosas, 4 cosas...' crea anticipación."
+    },
+    {
+      "name": "split_screen",
+      "retentionLift": 0.07,
+      "notes": "Comparaciones A/B aumentan saves 2x."
+    },
+    {
+      "name": "zoom_punch_in",
+      "retentionLift": 0.05,
+      "notes": "Cada 3-5s rompe la estaticidad de pantalla o talking head."
+    },
+    {
+      "name": "color_pops",
+      "retentionLift": 0.04,
+      "notes": "Memes, GIFs, capturas de UI de la herramienta mencionada."
+    },
+    {
+      "name": "progress_bar",
+      "retentionLift": 0.05,
+      "notes": "'1/3, 2/3...' mejora completion rate y reduce drop."
+    },
+    {
+      "name": "onscreen_text_ahead",
+      "retentionLift": 0.06,
+      "notes": "Texto adelanta el audio 0.5s: el ojo lee antes que la oreja, menos drop."
+    }
+  ],
+  "ctaTemplates": [
+    "Comentá {keyword} y te mando {resource}",
+    "¿Sos team {optionA} o team {optionB}?",
+    "Etiquetá al dev junior que necesita ver esto",
+    "Guardá esto antes de que {platform} lo baje",
+    "Si querés más tips de {topic}, seguime — subo uno por día",
+    "¿Cuál fue el peor {subject} que tuviste esta semana?"
+  ],
+  "hashtags": {
+    "reels": [
+      "#programming",
+      "#coding",
+      "#developer",
+      "#javascript",
+      "#webdev",
+      "#programmer",
+      "#webdeveloper",
+      "#softwaredeveloper",
+      "#reactjs",
+      "#typescript",
+      "#nextjs",
+      "#programacion"
+    ],
+    "tiktok": [
+      "#coding",
+      "#programming",
+      "#developer",
+      "#tech"
+    ],
+    "shorts": [
+      "#shorts",
+      "#coding",
+      "#programming"
+    ]
+  },
+  "captionTemplates": {
+    "single_tip": "{hook}\n\n{value}\n\n{cta}\n\n.\n.\n.\n\n{hashtags}",
+    "hot_take": "{hook}\n\n{value}\n\nComentá {keyword} o {keyword2}.\n\n{hashtags}",
+    "speed_build": "{hook}\n\nUsé {tool} + {tech}. El resultado abajo 👇\n\nComentá BUILD y te mando el prompt exacto que usé.\n\n{hashtags}",
+    "listicle": "{hook}\n\nEl #{number} me cambió la vida.\n\n¿Cuál ya conocías? Comentá el número 👇\n\n{hashtags}",
+    "story_horror": "{hook}\n\n{value}\n\n¿Cuál fue tu peor {subject} en producción? 👇\n\n{hashtags}",
+    "product_demo": "{hook}\n\n{value}\n\nLink en bio para verlo funcionando.\n\n{hashtags}"
+  }
+}

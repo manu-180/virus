@@ -1,0 +1,26 @@
+{
+  "name": "@virus/remotion",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "remotion studio",
+    "build": "remotion render",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.245",
+    "@remotion/google-fonts": "^4.0.457",
+    "@remotion/transitions": "^4.0.457",
+    "@virus/shared": "workspace:*",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.245",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "typescript": "^5.6.3"
+  }
+}
