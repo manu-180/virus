@@ -1,8 +1,12 @@
 /**
  * synthesize-audio — Inngest function for the video generation pipeline.
  *
- * Trigger: `virus/script.generated`
- * Payload: { videoId: string }
+ * Triggers: `virus/assets.generated` OR `virus/assets.skipped`
+ *   - assets.generated fires after generate-visual-assets succeeds (or fails
+ *     soft, see its onFailure handler — it always emits this event so the
+ *     pipeline keeps moving even when no AI backdrops were produced).
+ *   - assets.skipped fires when ASSETS_ENABLED is false (kill switch path).
+ * Payload (both): { videoId: string, ... }
  *
  * Flow:
  *  1. Load the videos row by videoId only (internal pipeline event — no userId
@@ -123,7 +127,13 @@ export const synthesizeAudio = inngest.createFunction(
       }
     },
   },
-  { event: 'virus/script.generated' },
+  // Multi-trigger: listen to both events. Inngest 3.x accepts an array of
+  // triggers and the handler receives the union event type. We only read
+  // `videoId` which both events expose, so no narrowing needed.
+  [
+    { event: 'virus/assets.generated' },
+    { event: 'virus/assets.skipped' },
+  ],
   async ({ event, step }) => {
     const { videoId } = event.data;
 
