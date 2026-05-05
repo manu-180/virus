@@ -48,6 +48,34 @@ export const videoInputSchema = z.object({
     handle: z.string(),
     logoUrl: z.string().url().optional(),
   }),
+  // AI-generated cinematic backdrops, one per slot. Optional: when undefined
+  // (or any individual slot undefined), the Remotion template falls back to
+  // its solid bg. Mirror of `RenderAssets` from `@virus/shared/visuals`.
+  assets: z
+    .object({
+      hook: z
+        .object({
+          url: z.string().url(),
+          type: z.enum(['video', 'image']),
+          durationSec: z.number().optional(),
+        })
+        .optional(),
+      reveal: z
+        .object({
+          url: z.string().url(),
+          type: z.enum(['video', 'image']),
+          durationSec: z.number().optional(),
+        })
+        .optional(),
+      cta: z
+        .object({
+          url: z.string().url(),
+          type: z.enum(['video', 'image']),
+          durationSec: z.number().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 });
 
 export type VideoInput = z.infer<typeof videoInputSchema>;
