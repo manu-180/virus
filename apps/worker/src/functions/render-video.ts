@@ -39,6 +39,7 @@ import { setVideoStatus, logJobEvent } from '../utils/index.js';
 import type { VideoRow } from '../utils/index.js';
 import { startRender, pollRender } from '@virus/shared/render';
 import type { VideoInput, CompositionId } from '@virus/shared/render';
+import type { RenderAssets, AssetType, AssetCategory } from '@virus/shared/visuals';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -176,8 +177,182 @@ export const renderVideo = inngest.createFunction(
 
     const durationSec: number = script?.totalDurationSec ?? 30;
 
+    // ------------------------------------------------------------------
+    // 2b. Resolve cinematic visual assets (hook / reveal / cta) → signed URLs.
+    //     This step is fully non-fatal: ANY failure (missing metadata,
+    //     visual_assets row not ready, signing error, HEAD precheck failure)
+    //     leaves the corresponding slot undefined so the Remotion template
+    //     falls back to its black-background visual cue.
+    //
+    //     Wrapped in a single outer `step.run` so Inngest memoizes the entire
+    //     resolution batch on retries. Signed URLs have a 1h TTL — long enough
+    //     for the downstream render (10 min poll budget) but cheap to redo on
+    //     a fresh retry. No external state mutation happens here.
+    // ------------------------------------------------------------------
+    // step.run serializes its return value through JSON, so an `undefined` result
+    // is observed as `null`. Accept both shapes here and normalize below.
+    const resolvedAssets: RenderAssets | null = await step.run('resolve-assets', async () => {
+      try {
+        // The select('*') above pulls metadata but VideoRow doesn't declare it.
+        const metadata = (video as unknown as { metadata?: Record<string, unknown> | null })
+          .metadata;
+        const assetIds = (metadata?.['assets'] ?? null) as {
+          hook?: string | null;
+          reveal?: string | null;
+          cta?: string | null;
+        } | null;
+
+        if (!assetIds) {
+          console.log({ fn: 'render-video', step: 'resolve-assets', videoId, skipped: 'no_assets_metadata' });
+          return null;
+        }
+
+        const db = getAdminClient();
+        const result: RenderAssets = {};
+
+        const slots: AssetCategory[] = ['hook', 'reveal', 'cta'];
+        for (const slot of slots) {
+          const id = assetIds[slot];
+          if (!id) continue;
+
+          // 1. Fetch the visual_assets row.
+          const { data: row, error: selErr } = await db
+            .from('visual_assets')
+            .select('id, type, storage_path, duration_sec, status')
+            .eq('id', id)
+            .maybeSingle();
+
+          if (selErr || !row) {
+            console.log({
+              fn: 'render-video',
+              step: 'resolve-assets',
+              videoId,
+              slot,
+              skipped: 'row_not_found',
+              error: selErr?.message,
+            });
+            continue;
+          }
+
+          const assetRow = row as {
+            id: string;
+            type: AssetType;
+            storage_path: string | null;
+            duration_sec: number | null;
+            status: string;
+          };
+
+          // 2. Defensive: skip rows that aren't ready or are missing the path.
+          if (assetRow.status !== 'ready' || !assetRow.storage_path) {
+            console.log({
+              fn: 'render-video',
+              step: 'resolve-assets',
+              videoId,
+              slot,
+              skipped: 'not_ready_or_no_path',
+              status: assetRow.status,
+            });
+            continue;
+          }
+
+          // 3. Generate a fresh 1h signed URL.
+          const { data: signed, error: signErr } = await db.storage
+            .from('visual-assets')
+            .createSignedUrl(assetRow.storage_path, 3600);
+
+          if (signErr || !signed?.signedUrl) {
+            await db.from('job_events').insert({
+              video_id: videoId,
+              step: 'render.signed_url_failed',
+              status: 'failed',
+              payload: {
+                slot,
+                assetId: assetRow.id,
+                storagePath: assetRow.storage_path,
+                error: signErr?.message ?? 'no_signed_url',
+              },
+            });
+            continue;
+          }
+
+          // 4. HEAD-check the signed URL — catches 4xx/5xx before render starts.
+          let urlOk = false;
+          try {
+            const head = await fetch(signed.signedUrl, { method: 'HEAD' });
+            urlOk = head.status < 400;
+            if (!urlOk) {
+              await db.from('job_events').insert({
+                video_id: videoId,
+                step: 'render.url_check_failed',
+                status: 'failed',
+                payload: {
+                  slot,
+                  assetId: assetRow.id,
+                  httpStatus: head.status,
+                },
+              });
+            }
+          } catch (fetchErr) {
+            await db.from('job_events').insert({
+              video_id: videoId,
+              step: 'render.url_check_failed',
+              status: 'failed',
+              payload: {
+                slot,
+                assetId: assetRow.id,
+                error: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
+              },
+            });
+            urlOk = false;
+          }
+
+          if (!urlOk) continue;
+
+          // 5. Slot resolved — attach AssetRef.
+          result[slot] = {
+            url: signed.signedUrl,
+            type: assetRow.type,
+            ...(assetRow.duration_sec != null ? { durationSec: assetRow.duration_sec } : {}),
+          };
+        }
+
+        const resolved = Object.keys(result).filter((k) => result[k as AssetCategory]);
+        console.log({
+          fn: 'render-video',
+          step: 'resolve-assets',
+          videoId,
+          resolved,
+        });
+
+        return Object.keys(result).length > 0 ? result : null;
+      } catch (err) {
+        // Any unexpected error: log and degrade to no assets (template will
+        // fall back to black bg). The render still proceeds.
+        console.error('[render-video] resolve-assets unexpected error', err);
+        try {
+          await getAdminClient()
+            .from('job_events')
+            .insert({
+              video_id: videoId,
+              step: 'render.resolve_assets_error',
+              status: 'failed',
+              payload: { error: err instanceof Error ? err.message : String(err) },
+            });
+        } catch {
+          /* swallow audit failure */
+        }
+        return null;
+      }
+    });
+
+    // Normalize null → undefined for the downstream consumer.
+    const assets: RenderAssets | undefined = resolvedAssets ?? undefined;
+
     const compositionId = (video.template ?? script?.recommendedTemplate ?? 'tip') as CompositionId;
-    const inputProps: VideoInput = {
+    // RenderInputProps is set to be extended in Phase 5 with `assets?: RenderAssets`.
+    // Until that lands in the shared schema, attach it via an extended local type
+    // so the value flows through to the Remotion bundle without runtime cost.
+    const inputProps: VideoInput & { assets?: RenderAssets } = {
       totalDurationSec: durationSec,
       themeColor: video.theme_color ?? '#0175C2',
       // musicMood omitted until music files are added to Remotion bundle
@@ -189,6 +364,7 @@ export const renderVideo = inngest.createFunction(
       ) as VideoInput['segments'],
       language: ((video.language ?? 'es').startsWith('es') ? 'es' : 'en') as 'es' | 'en',
       brand: { handle: 'Apex' },
+      ...(assets ? { assets } : {}),
     };
 
     console.log({
@@ -198,6 +374,8 @@ export const renderVideo = inngest.createFunction(
       composition: compositionId,
       totalDurationSec: inputProps.totalDurationSec,
       language: inputProps.language,
+      hasAssets: !!assets,
+      assetSlots: assets ? Object.keys(assets) : [],
     });
 
     // ------------------------------------------------------------------
