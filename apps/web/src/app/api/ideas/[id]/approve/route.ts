@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { inngest } from '@/lib/inngest';
+import { visuals } from '@virus/shared';
+
+const DEFAULT_ASSET_CHOICES: visuals.AssetChoices = {
+  hook: { mode: 'fresh' },
+  reveal: { mode: 'fresh' },
+  cta: { mode: 'fresh' },
+};
 
 async function requireUser() {
   const supabase = await createClient();
@@ -11,7 +18,7 @@ async function requireUser() {
 }
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -23,10 +30,32 @@ export async function POST(
     const { id: ideaId } = await params;
     const admin = createAdminClient();
 
+    // Body is optional; only `asset_choices` is supported today.
+    let body: unknown = {};
+    try {
+      body = await req.json();
+    } catch {
+      body = {};
+    }
+
+    const rawChoices = (body as { asset_choices?: unknown }).asset_choices;
+    let assetChoices: visuals.AssetChoices = DEFAULT_ASSET_CHOICES;
+    if (rawChoices !== undefined && rawChoices !== null) {
+      const parsed = visuals.AssetChoicesSchema.safeParse(rawChoices);
+      if (parsed.success) {
+        assetChoices = parsed.data;
+      } else {
+        console.warn(
+          '[POST /api/ideas/[id]/approve] invalid asset_choices, falling back to defaults',
+          parsed.error.flatten(),
+        );
+      }
+    }
+
     // Load idea and verify ownership via project
     const { data: idea, error: ideaErr } = await admin
       .from('video_ideas')
-      .select('id, project_id, user_id, status, hook, angle, format, estimated_duration')
+      .select('id, project_id, user_id, status, hook, angle, format, estimated_duration, metadata')
       .eq('id', ideaId)
       .is('deleted_at', null)
       .single();
@@ -41,10 +70,18 @@ export async function POST(
       return NextResponse.json({ error: 'already_scripted' }, { status: 409 });
     }
 
-    // Mark idea approved (idempotent)
+    // Persist asset_choices into metadata, preserving any existing keys.
+    const existingMeta =
+      (idea.metadata && typeof idea.metadata === 'object' && !Array.isArray(idea.metadata)
+        ? (idea.metadata as Record<string, unknown>)
+        : {}) ?? {};
+
+    const nextMeta = { ...existingMeta, asset_choices: assetChoices };
+
+    // Mark idea approved + persist metadata (idempotent).
     await admin
       .from('video_ideas')
-      .update({ status: 'approved' })
+      .update({ status: 'approved', metadata: nextMeta })
       .eq('id', ideaId);
 
     // Create pending video row linked to this idea
