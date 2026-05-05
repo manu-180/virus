@@ -100,6 +100,25 @@ function relativeTime(iso: string): string {
   return `hace ${d} d`;
 }
 
+/**
+ * Mount-only relative time. The server renders an empty span; after hydration
+ * the client computes and updates every 30s. Avoids the SSR/CSR mismatch that
+ * `relativeTime(now)` causes when the second crosses between server render
+ * and client hydration.
+ */
+function RelativeTime({ iso }: { iso: string }) {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    const update = () => setText(relativeTime(iso));
+    update();
+    const t = setInterval(update, 30_000);
+    return () => clearInterval(t);
+  }, [iso]);
+  // Render the same wrapper element on both server and client so React's
+  // hydration aligns the tree shape; only the text content is empty initially.
+  return <span suppressHydrationWarning>{text ?? ''}</span>;
+}
+
 interface PipelineClientProps {
   initialVideos: PipelineVideoRow[];
 }
@@ -314,7 +333,7 @@ function VideoRow({
                 · {video.video_ideas.format}
               </span>
             )}
-            <span className="text-[10px] text-white/40">· {relativeTime(video.created_at)}</span>
+            <span className="text-[10px] text-white/40">· <RelativeTime iso={video.created_at} /></span>
           </div>
 
           <p className="text-sm font-medium text-white leading-snug line-clamp-2">{title}</p>
