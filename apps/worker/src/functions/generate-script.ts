@@ -403,14 +403,35 @@ export const generateScript = inngest.createFunction(
     });
 
     // ------------------------------------------------------------------
-    // 11. Emit virus/script.generated
+    // 11. Emit next event — gated by ASSETS_ENABLED feature flag.
+    //
+    //  - flag on  → 'virus/script.generated' (triggers generate-visual-assets,
+    //              which then emits assets.generated and unblocks audio).
+    //  - flag off → 'virus/assets.skipped' (bypass; synthesize-audio listens to
+    //              both assets.generated and assets.skipped).
+    //
+    // The flag is read at emit time so flipping it does not interrupt
+    // in-flight runs — only newly-emitted events follow the new path.
     // ------------------------------------------------------------------
-    await step.sendEvent('emit-script-generated', {
-      name: 'virus/script.generated',
-      data: { videoId },
-    });
+    const assetsEnabled = process.env['ASSETS_ENABLED'] === 'true';
+    if (assetsEnabled) {
+      await step.sendEvent('emit-script-generated', {
+        name: 'virus/script.generated',
+        data: { videoId },
+      });
+    } else {
+      await step.sendEvent('emit-assets-skipped', {
+        name: 'virus/assets.skipped',
+        data: { videoId, reason: 'feature_disabled' },
+      });
+    }
 
-    console.log({ fn: 'generate-script', step: 'done', videoId });
+    console.log({
+      fn: 'generate-script',
+      step: 'done',
+      videoId,
+      assetsEnabled,
+    });
 
     return { ok: true, videoId, totalDurationSec: script.totalDurationSec };
   },
