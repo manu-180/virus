@@ -8,7 +8,8 @@ import {
   interpolate,
 } from 'remotion';
 import { video, colors, radius, fontWeights, shadows } from '@virus/shared';
-import { HookCard, Captions, SoundEffect } from '@/components';
+import type { RenderAssets } from '@virus/shared/visuals';
+import { HookCard, Captions, SoundEffect, AssetBackdrop } from '@/components';
 import { TweetMock } from '@/components/tweet-mock';
 import { oxaniumFamily } from '@/lib/fonts';
 import type { HotTakeInput } from './schema';
@@ -400,6 +401,7 @@ export const HotTakeTemplate: React.FC<HotTakeInput> = ({
   sideB,
   tweets,
   pollOptions,
+  assets,
 }) => {
   const { fps } = useVideoConfig();
 
@@ -449,9 +451,21 @@ export const HotTakeTemplate: React.FC<HotTakeInput> = ({
       {segments.map((seg) => {
         const from = Math.round(seg.startSec * fps);
         const duration = Math.round((seg.endSec - seg.startSec) * fps);
+        const isAssetSlot =
+          seg.role === 'hook' || seg.role === 'reveal' || seg.role === 'cta';
         return (
           <Sequence key={seg.index} from={from} durationInFrames={duration}>
             <AbsoluteFill>
+              {/* AI backdrop (b-roll video / hero image) — painted first so all
+                  other UI sits on top. Renders nothing when `assets` is
+                  undefined or this slot has no asset. */}
+              {isAssetSlot && (
+                <AssetBackdrop
+                  slot={seg.role as 'hook' | 'reveal' | 'cta'}
+                  themeColor={themeColor}
+                  {...(assets ? { assets: assets as RenderAssets } : {})}
+                />
+              )}
               {renderSegmentContent(seg)}
               {seg.soundEffect && <SoundEffect type={seg.soundEffect} atFrame={0} />}
             </AbsoluteFill>
