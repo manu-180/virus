@@ -8,15 +8,26 @@ import {
   ZoomPunch,
   FlashTransition,
   SoundEffect,
+  AssetBackdrop,
 } from '@/components';
 import { VoiceoverAudio, BackgroundMusic } from '@/lib/audio-loader';
 import { SafeZones } from '@/lib/safe-zones';
 import { useTokens } from '@/lib/use-tokens';
+import type { RenderAssets } from '@virus/shared/visuals';
 import type { TipInput } from './schema';
 
 export const TipTemplate: React.FC<TipInput> = (props) => {
-  const { themeColor, audioUrl, segments, captions, musicMood, brand, variant, totalDurationSec } =
-    props;
+  const {
+    themeColor,
+    audioUrl,
+    segments,
+    captions,
+    musicMood,
+    brand,
+    variant,
+    totalDurationSec,
+    assets,
+  } = props;
   const { fps } = useVideoConfig();
   const tokens = useTokens(themeColor);
 
@@ -49,8 +60,22 @@ export const TipTemplate: React.FC<TipInput> = (props) => {
           variant === 'dense' ? (seg.role === 'mini_payoff' ? 'glitch' : 'punch') : 'slide';
         const withZoom = variant === 'dense' && seg.role !== 'mini_payoff';
 
+        const isAssetSlot =
+          seg.role === 'hook' || seg.role === 'reveal' || seg.role === 'cta';
+
         return (
           <Sequence key={seg.index} from={startFrame} durationInFrames={durFrames}>
+            {/* AI backdrop (b-roll video / hero image) — painted first so all other
+                UI sits on top. Renders nothing when `assets` is undefined or this
+                slot has no asset, leaving the template's solid bg as fallback. */}
+            {isAssetSlot && (
+              <AssetBackdrop
+                slot={seg.role as 'hook' | 'reveal' | 'cta'}
+                themeColor={themeColor}
+                {...(assets ? { assets: assets as RenderAssets } : {})}
+              />
+            )}
+
             {/* Text card: hook / reveal / mini_payoff */}
             {isCardSeg &&
               (withZoom ? (
