@@ -29,3 +29,15 @@ export type { TweetMockProps } from './tweet-mock';
 
 export { ScreenRecording } from './screen-recording';
 export type { ScreenRecordingProps } from './screen-recording';
+
+export { AssetErrorBoundary } from './AssetErrorBoundary';
+export type { AssetErrorBoundaryProps } from './AssetErrorBoundary';
+
+export { AIBackgroundVideo } from './AIBackgroundVideo';
+export type { AIBackgroundVideoProps } from './AIBackgroundVideo';
+
+export { AIHeroImage } from './AIHeroImage';
+export type { AIHeroImageProps } from './AIHeroImage';
+
+export { AssetBackdrop } from './AssetBackdrop';
+export type { AssetBackdropProps, AssetSlot } from './AssetBackdrop';
