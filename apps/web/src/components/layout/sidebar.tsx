@@ -12,6 +12,7 @@ import {
   BarChart3,
   Settings,
   Zap,
+  Library,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -30,6 +31,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Calendar,
   BarChart3,
   Settings,
+  Library,
 };
 
 interface SidebarProps {

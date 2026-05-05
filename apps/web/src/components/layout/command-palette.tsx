@@ -10,6 +10,7 @@ import {
   Home,
   BarChart3,
   Settings,
+  Library,
 } from 'lucide-react';
 import {
   CommandDialog,
@@ -104,6 +105,10 @@ export function CommandPalette() {
           <CommandItem onSelect={() => go('/dashboard/ideas')}>
             <Lightbulb className="h-4 w-4" />
             <span>Ideas</span>
+          </CommandItem>
+          <CommandItem onSelect={() => go('/dashboard/assets')}>
+            <Library className="h-4 w-4" />
+            <span>Biblioteca</span>
           </CommandItem>
           <CommandItem onSelect={() => go('/dashboard/performance')}>
             <BarChart3 className="h-4 w-4" />
