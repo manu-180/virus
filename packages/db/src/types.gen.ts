@@ -540,6 +540,52 @@ export type Database = {
         }
         Relationships: []
       }
+      video_assets_used: {
+        Row: {
+          asset_id: string
+          category: string
+          used_at: string
+          user_id: string
+          video_id: string
+        }
+        Insert: {
+          asset_id: string
+          category: string
+          used_at?: string
+          user_id: string
+          video_id: string
+        }
+        Update: {
+          asset_id?: string
+          category?: string
+          used_at?: string
+          user_id?: string
+          video_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_assets_used_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "visual_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "video_assets_used_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "video_assets_used_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: false
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       video_ideas: {
         Row: {
           angle: string | null
@@ -676,6 +722,7 @@ export type Database = {
           idea_id: string | null
           inngest_run_id: string | null
           language: string | null
+          metadata: Json
           project_id: string
           published_at: string | null
           scheduled_for: string | null
@@ -702,6 +749,7 @@ export type Database = {
           idea_id?: string | null
           inngest_run_id?: string | null
           language?: string | null
+          metadata?: Json
           project_id: string
           published_at?: string | null
           scheduled_for?: string | null
@@ -728,6 +776,7 @@ export type Database = {
           idea_id?: string | null
           inngest_run_id?: string | null
           language?: string | null
+          metadata?: Json
           project_id?: string
           published_at?: string | null
           scheduled_for?: string | null
@@ -799,15 +848,115 @@ export type Database = {
         }
         Relationships: []
       }
+      visual_assets: {
+        Row: {
+          burned: boolean
+          category: string
+          created_at: string
+          duration_sec: number | null
+          error: string | null
+          height: number | null
+          id: string
+          language: string
+          last_used_at: string | null
+          project_id: string
+          prompt: string
+          prompt_hash: string
+          provider: string
+          status: string
+          storage_path: string | null
+          tags: string[]
+          template: string
+          theme_color: string
+          type: string
+          user_id: string
+          width: number | null
+        }
+        Insert: {
+          burned?: boolean
+          category: string
+          created_at?: string
+          duration_sec?: number | null
+          error?: string | null
+          height?: number | null
+          id?: string
+          language: string
+          last_used_at?: string | null
+          project_id: string
+          prompt: string
+          prompt_hash: string
+          provider: string
+          status?: string
+          storage_path?: string | null
+          tags?: string[]
+          template: string
+          theme_color: string
+          type: string
+          user_id: string
+          width?: number | null
+        }
+        Update: {
+          burned?: boolean
+          category?: string
+          created_at?: string
+          duration_sec?: number | null
+          error?: string | null
+          height?: number | null
+          id?: string
+          language?: string
+          last_used_at?: string | null
+          project_id?: string
+          prompt?: string
+          prompt_hash?: string
+          provider?: string
+          status?: string
+          storage_path?: string | null
+          tags?: string[]
+          template?: string
+          theme_color?: string
+          type?: string
+          user_id?: string
+          width?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "visual_assets_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "visual_assets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      compute_assets_failure_rate: {
+        Args: { window_minutes?: number }
+        Returns: {
+          failed: number
+          rate: number
+          total: number
+        }[]
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       sum_usage_last_30d: {
         Args: { p_service: string; p_user_id: string }
+        Returns: number
+      }
+      sum_visual_spend_last_24h_global: { Args: never; Returns: number }
+      sum_visual_spend_last_24h_user: {
+        Args: { p_user_id: string }
         Returns: number
       }
     }
