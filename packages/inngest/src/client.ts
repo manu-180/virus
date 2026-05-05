@@ -13,4 +13,15 @@ export type Events = {
   'virus/render.failed':     { data: { videoId: string; error: string } };
   'virus/caption.generated':    { data: { videoId: string } };
   'virus/generate.requested':  { data: { videoId: string; projectId: string; userId: string } };
+  'virus/assets.requested':    { data: { videoId: string } };
+  'virus/assets.generated':    {
+    data: {
+      videoId: string;
+      assetIds: { hook: string | null; reveal: string | null; cta: string | null };
+    };
+  };
+  'virus/assets.skipped':      { data: { videoId: string; reason: string } };
+  'virus/assets.failed':       {
+    data: { videoId: string; slot: 'hook' | 'reveal' | 'cta'; reason: string };
+  };
 };
