@@ -12,7 +12,8 @@
     "./ai": "./src/ai/index.ts",
     "./audio": "./src/audio/index.ts",
     "./captions": "./src/captions/index.ts",
-    "./render": "./src/render/index.ts"
+    "./render": "./src/render/index.ts",
+    "./visuals": "./src/visuals/index.ts"
   },
   "scripts": {
     "test": "vitest run",
