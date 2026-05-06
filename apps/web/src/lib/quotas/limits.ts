@@ -2,7 +2,7 @@ import { createAdminClient } from '../supabase/admin';
 
 export const LIMITS_PER_USER = {
   anthropic:      { perDayUsd: 5,       perMonthUsd: 30 },
-  elevenlabs:     { perDayChars: 5_000, perMonthChars: 100_000 },
+  elevenlabs:     { perDayChars: 25_000, perMonthChars: 100_000 },
   assemblyai:     { perDayMinutes: 30,  perMonthMinutes: 600 },
   remotionLambda: { perDayRenders: 20,  perMonthRenders: 200 },
 } as const;
