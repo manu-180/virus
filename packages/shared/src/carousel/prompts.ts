@@ -106,19 +106,35 @@ Respondé SOLO con el caption completo (texto + hashtags). Sin explicaciones ni 
 // Visual prompt — final prompt for Gemini Imagen per slide
 // ---------------------------------------------------------------------------
 
+/**
+ * Build a visual prompt for a single slide.
+ *
+ * @param topic - The carousel topic (brief.topic) used as a "scene anchor" so
+ *   all slides in the same carousel stay visually coherent.  Pass it from the
+ *   outer loop so Gemini anchors every image to the same subject matter.
+ */
 export function buildVisualPrompt(
   slideSpec: SlideSpec,
   stylePreset: CarouselBrief['stylePreset'],
   brand: ProjectBrand,
+  topic?: string,
 ): string {
   const moodByPreset: Record<CarouselBrief['stylePreset'], string> = {
-    minimal: 'clean, airy, minimalist, soft natural light, muted tones, lots of white space',
-    bold: 'high contrast, punchy colors, dynamic composition, strong shadows, energetic',
+    minimal:
+      'soft cream background, subtle texture, high-key lighting, lots of negative space, no text',
+    bold:
+      'high contrast scene, dramatic lighting, vivid saturated colors, cinematic, no text',
     editorial:
-      'sophisticated, magazine-quality, structured layout, refined color palette, professional',
+      'magazine editorial photography, muted desaturated tones, film grain, no text',
   };
 
   const mood = moodByPreset[stylePreset];
 
-  return `${slideSpec.visualPrompt}. Style: ${mood}. Maintain visual consistency with the rest of the carousel series — same color palette, lighting direction, and mood. Aspect ratio 4:5 (1080x1350px). Negative: no text, no letters, no words, no logos, no watermarks, no close-up human faces unless explicitly described, no clutter.`;
+  // Scene anchor: tie every slide to the same topic so the carousel reads as
+  // one cohesive visual series.  The individual visualPrompt adds per-slide variation.
+  const anchor = topic != null && topic.trim().length > 0
+    ? `Scene context: ${topic.trim()}. `
+    : '';
+
+  return `${anchor}${slideSpec.visualPrompt}. Visual style: ${mood}. Brand: ${brand.brandName}. Maintain visual consistency across the carousel — same color palette, lighting direction, and mood. Aspect ratio 4:5 (1080x1350px). Negative: no text, no letters, no words, no logos, no watermarks, no close-up human faces unless explicitly described, no clutter.`;
 }

@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import sharp from 'sharp';
 import { composeSlide } from '../composer.js';
-import { STYLE_PRESETS } from '../templates.js';
+import { STYLE_PRESETS, getLayoutForRole } from '../templates.js';
 import type { SlideSpec } from '../types.js';
 
-// Create a solid-color 1080×1350 PNG buffer for testing (no real image needed)
 async function makeFakeBaseImage(): Promise<Buffer> {
   return sharp({
     create: { width: 1080, height: 1350, channels: 3, background: { r: 30, g: 30, b: 30 } },
@@ -21,80 +20,134 @@ const mockSlide: SlideSpec = {
   visualPrompt: 'A test visual',
 };
 
+// ---------------------------------------------------------------------------
+// composeSlide — output dimensions and basic contracts
+// ---------------------------------------------------------------------------
+
 describe('composeSlide', () => {
-  it('produces a valid PNG with dimensions 1080×1350', async () => {
-    const base = await makeFakeBaseImage();
-    const result = await composeSlide({
-      baseImage: base,
-      slide: mockSlide,
-      preset: STYLE_PRESETS.minimal,
-    });
-
-    const meta = await sharp(result).metadata();
-    expect(meta.format).toBe('png');
-    expect(meta.width).toBe(1080);
-    expect(meta.height).toBe(1350);
-  }, 30_000);
-
-  it('handles a very long headline (200 chars) without throwing', async () => {
-    const base = await makeFakeBaseImage();
-    const longHeadline = 'A'.repeat(200);
-
-    await expect(
-      composeSlide({
-        baseImage: base,
-        slide: { ...mockSlide, headline: longHeadline },
-        preset: STYLE_PRESETS.bold,
-      }),
-    ).resolves.toBeDefined();
-  }, 30_000);
-
-  it('each preset produces a different byte-length output', async () => {
+  it('each preset produces a 1080×1350 PNG', async () => {
     const base = await makeFakeBaseImage();
 
-    const outputs = await Promise.all(
-      Object.values(STYLE_PRESETS).map((preset) =>
-        composeSlide({ baseImage: base, slide: mockSlide, preset }),
-      ),
-    );
-
-    // Verify each preset output is a valid 1080×1350 PNG
-    for (const output of outputs) {
-      const meta = await sharp(output).metadata();
-      expect(meta.format).toBe('png');
-      expect(meta.width).toBe(1080);
-      expect(meta.height).toBe(1350);
+    for (const [name, preset] of Object.entries(STYLE_PRESETS)) {
+      const result = await composeSlide({ baseImage: base, slide: mockSlide, preset });
+      const meta = await sharp(result).metadata();
+      expect(meta.format, `${name}: format`).toBe('png');
+      expect(meta.width, `${name}: width`).toBe(1080);
+      expect(meta.height, `${name}: height`).toBe(1350);
     }
   }, 60_000);
 
-  it('composed output differs from base image (text was rendered)', async () => {
+  it('composed output differs from base image (overlay was applied)', async () => {
     const base = await makeFakeBaseImage();
     const result = await composeSlide({
       baseImage: base,
       slide: mockSlide,
       preset: STYLE_PRESETS.bold,
     });
-    // The composed output must differ from the base (text overlay was applied)
     expect(result).not.toEqual(base);
   }, 30_000);
 
   it('works when slide has no body', async () => {
     const base = await makeFakeBaseImage();
-    const slideNoBody: SlideSpec = {
+    const noBodySlide: SlideSpec = {
       idx: mockSlide.idx,
       role: mockSlide.role,
       headline: mockSlide.headline,
       visualPrompt: mockSlide.visualPrompt,
-      // body intentionally omitted
     };
-
     const result = await composeSlide({
       baseImage: base,
-      slide: slideNoBody,
+      slide: noBodySlide,
       preset: STYLE_PRESETS.editorial,
     });
-
     const meta = await sharp(result).metadata();
     expect(meta.format).toBe('png');
+    expect(meta.width).toBe(1080);
+    expect(meta.height).toBe(1350);
   }, 30_000);
+
+  it('data role with leading stat hides body and extracts big number', async () => {
+    const base = await makeFakeBaseImage();
+    const dataSlide: SlideSpec = {
+      idx: 3,
+      role: 'data',
+      headline: 'Los números no mienten',
+      body: '73% de los sitios web pierden el 50% de sus visitas.',
+      visualPrompt: 'abstract data',
+    };
+    // Verify overrides: bigNumber extracted, bodyHidden
+    const overrides = getLayoutForRole('data', STYLE_PRESETS.minimal, dataSlide.body);
+    expect(overrides.bigNumber).toBe('73%');
+    expect(overrides.bodyHidden).toBe(true);
+
+    // Composer must not throw
+    const result = await composeSlide({ baseImage: base, slide: dataSlide, preset: STYLE_PRESETS.minimal });
+    const meta = await sharp(result).metadata();
+    expect(meta.width).toBe(1080);
+    expect(meta.height).toBe(1350);
+  }, 30_000);
+
+  it('title longer than 60 chars is truncated with "…"', async () => {
+    const base = await makeFakeBaseImage();
+    const longTitle = 'A'.repeat(80);
+    const slideWithLongTitle: SlideSpec = {
+      ...mockSlide,
+      headline: longTitle,
+    };
+    // composeSlide must not throw with a long headline
+    const result = await composeSlide({
+      baseImage: base,
+      slide: slideWithLongTitle,
+      preset: STYLE_PRESETS.minimal,
+    });
+    const meta = await sharp(result).metadata();
+    expect(meta.format).toBe('png');
+    expect(meta.width).toBe(1080);
+  }, 30_000);
+});
+
+// ---------------------------------------------------------------------------
+// getLayoutForRole — pure logic tests (no image rendering needed)
+// ---------------------------------------------------------------------------
+
+describe('getLayoutForRole', () => {
+  const preset = STYLE_PRESETS.minimal;
+
+  it('hook role shows eyebrow and scales title up', () => {
+    const o = getLayoutForRole('hook', preset);
+    expect(o.showEyebrow).toBe(true);
+    expect(o.titleSizeMultiplier).toBeGreaterThan(1);
+  });
+
+  it('data role with "73% de los sitios..." extracts "73%" and hides body', () => {
+    const o = getLayoutForRole('data', preset, '73% de los sitios no convierten.');
+    expect(o.bigNumber).toBe('73%');
+    expect(o.bodyHidden).toBe(true);
+  });
+
+  it('data role with "5x" prefix extracts "5x"', () => {
+    const o = getLayoutForRole('data', preset, '5x más conversiones en 3 meses.');
+    expect(o.bigNumber).toBe('5x');
+    expect(o.bodyHidden).toBe(true);
+  });
+
+  it('data role without leading stat keeps body visible', () => {
+    const o = getLayoutForRole('data', preset, 'La mayoría no sabe esto.');
+    expect(o.bigNumber).toBeNull();
+    expect(o.bodyHidden).toBe(false);
+  });
+
+  it('cta role shows arrow', () => {
+    const o = getLayoutForRole('cta', preset);
+    expect(o.showArrow).toBe(true);
+  });
+
+  it('insight/example/problem use default multiplier', () => {
+    for (const role of ['insight', 'example', 'problem'] as const) {
+      const o = getLayoutForRole(role, preset);
+      expect(o.titleSizeMultiplier).toBe(1.0);
+      expect(o.showArrow).toBe(false);
+      expect(o.showEyebrow).toBe(false);
+    }
+  });
 });

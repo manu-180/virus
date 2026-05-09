@@ -1,40 +1,161 @@
 // ---------------------------------------------------------------------------
-// Style presets for carousel overlay composer (Tanda 2).
-// Consumed by compose-carousel-overlay.ts to drive Satori layout tokens.
+// Style presets for carousel overlay composer.
+// Consumed by composer.ts to drive Satori layout tokens.
 // ---------------------------------------------------------------------------
 
+import type { SlideSpec } from './types.js';
+
 export interface StylePreset {
-  palette: string[];
-  fontFamily: string;
+  // Overlay
+  overlayColor: string;
+  overlayOpacity: number;
+  overlayStyle: 'gradient-bottom' | 'gradient-top' | 'gradient-both' | 'solid-bottom' | 'none';
+
+  // Text colors
+  textColor: string;
+  bodyColor: string;
+  accentColor: string;
+
+  // Title typography
+  titleFont: string;
+  titleWeight: number;
   titleSize: number;
+  titleLineHeight: number;
+  titleUppercase: boolean;
+
+  // Body typography
+  bodyFont: string;
+  bodyWeight: number;
   bodySize: number;
-  backgroundOverlay: 'none' | 'gradient' | 'solid';
+  bodyLineHeight: number;
+
+  // Layout
   padding: number;
+  layoutStyle: 'bottom-stack' | 'center-stack' | 'editorial';
 }
 
+// ---------------------------------------------------------------------------
+// Role-aware layout overrides
+// ---------------------------------------------------------------------------
+
+export interface LayoutOverrides {
+  titleSizeMultiplier: number;
+  bodyHidden: boolean;
+  bigNumber: string | null;
+  showArrow: boolean;
+  showEyebrow: boolean;
+}
+
+function extractBigNumber(body: string): string | null {
+  const m = body.match(/^(\d+(?:[.,]\d+)?\s*[%x×])/i);
+  return m ? (m[1] ?? '').trim() || null : null;
+}
+
+export function getLayoutForRole(
+  role: SlideSpec['role'],
+  _preset: StylePreset,
+  body?: string,
+): LayoutOverrides {
+  switch (role) {
+    case 'hook':
+      return { titleSizeMultiplier: 1.15, bodyHidden: false, bigNumber: null, showArrow: false, showEyebrow: true };
+
+    case 'data': {
+      const bigNumber = body != null ? extractBigNumber(body) : null;
+      return { titleSizeMultiplier: 1.0, bodyHidden: bigNumber !== null, bigNumber, showArrow: false, showEyebrow: false };
+    }
+
+    case 'cta':
+      return { titleSizeMultiplier: 1.0, bodyHidden: false, bigNumber: null, showArrow: true, showEyebrow: false };
+
+    default:
+      return { titleSizeMultiplier: 1.0, bodyHidden: false, bigNumber: null, showArrow: false, showEyebrow: false };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The 3 curated presets
+// ---------------------------------------------------------------------------
+
 export const STYLE_PRESETS: Record<'minimal' | 'bold' | 'editorial', StylePreset> = {
+  /**
+   * minimal — cream gradient, generous negative space, clean sans-serif.
+   */
   minimal: {
-    palette: ['#FFFFFF', '#F5F5F5', '#1A1A1A', '#6B6B6B'],
-    fontFamily: 'Inter',
-    titleSize: 48,
-    bodySize: 24,
-    backgroundOverlay: 'none',
-    padding: 64,
+    overlayColor: '#F8F5EE',
+    overlayOpacity: 0.7,
+    overlayStyle: 'gradient-bottom',
+
+    textColor: '#0A0A0A',
+    bodyColor: '#2D2D2D',
+    accentColor: '#E63946',
+
+    titleFont: 'Bricolage Grotesque',
+    titleWeight: 700,
+    titleSize: 72,
+    titleLineHeight: 1.05,
+    titleUppercase: false,
+
+    bodyFont: 'Inter',
+    bodyWeight: 500,
+    bodySize: 32,
+    bodyLineHeight: 1.3,
+
+    padding: 80,
+    layoutStyle: 'bottom-stack',
   },
+
+  /**
+   * bold — dark solid overlay, yellow text, uppercase punch.
+   */
   bold: {
-    palette: ['#0A0A0A', '#FFFFFF', '#FF3B30', '#FFD60A'],
-    fontFamily: 'Sora',
-    titleSize: 56,
-    bodySize: 26,
-    backgroundOverlay: 'gradient',
-    padding: 48,
+    overlayColor: '#0A0A0A',
+    overlayOpacity: 0.8,
+    overlayStyle: 'solid-bottom',
+
+    textColor: '#FFD60A',
+    bodyColor: '#FFFFFF',
+    accentColor: '#FF006E',
+
+    titleFont: 'Archivo Black',
+    titleWeight: 900,
+    titleSize: 88,
+    titleLineHeight: 0.95,
+    titleUppercase: true,
+
+    bodyFont: 'Inter',
+    bodyWeight: 600,
+    bodySize: 30,
+    bodyLineHeight: 1.3,
+
+    padding: 64,
+    layoutStyle: 'center-stack',
   },
+
+  /**
+   * editorial — warm beige gradient, serif title, magazine layout.
+   */
   editorial: {
-    palette: ['#1C1C1E', '#F2F2F7', '#007AFF', '#C7C7CC'],
-    fontFamily: 'Playfair Display',
-    titleSize: 52,
-    bodySize: 22,
-    backgroundOverlay: 'solid',
-    padding: 56,
+    overlayColor: '#EDE6D6',
+    overlayOpacity: 0.5,
+    overlayStyle: 'gradient-both',
+
+    textColor: '#3A2E1F',
+    bodyColor: '#5C4E3A',
+    accentColor: '#A23E2C',
+
+    titleFont: 'Playfair Display',
+    titleWeight: 700,
+    titleSize: 64,
+    titleLineHeight: 1.1,
+    titleUppercase: false,
+
+    bodyFont: 'Inter',
+    bodyWeight: 400,
+    bodySize: 28,
+    bodyLineHeight: 1.45,
+
+    padding: 96,
+    layoutStyle: 'editorial',
   },
 };
