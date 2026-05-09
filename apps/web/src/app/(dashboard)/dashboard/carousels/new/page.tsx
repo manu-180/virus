@@ -26,7 +26,7 @@ export default async function NewCarouselPage() {
             Creá tu primer proyecto antes de generar carruseles.
           </p>
           <Link
-            href="/projects/new"
+            href="/dashboard/projects/new"
             className="inline-flex items-center gap-1.5 rounded-lg bg-[#C8FF57] text-[#111318] font-semibold text-sm px-4 py-2 hover:bg-[#d4ff6e] transition-colors"
           >
             Crear proyecto

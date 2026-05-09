@@ -16,7 +16,12 @@ export async function POST(req: NextRequest) {
     const user = await requireUser();
     if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-    const body = await req.json();
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'invalid_json' }, { status: 400 });
+    }
     const parsed = CreateCarouselSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
@@ -44,7 +49,7 @@ export async function POST(req: NextRequest) {
         project_id: input.projectId,
         user_id: user.id,
         status: 'pending',
-        brief: JSON.stringify(input.brief),
+        brief: input.brief,
         style_preset: input.stylePreset,
         slide_count: input.brief.slideCount,
       })
@@ -56,10 +61,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'internal_error' }, { status: 500 });
     }
 
-    await inngest.send({
-      name: 'virus/carousel.created',
-      data: { carouselId: carousel.id, userId: user.id, projectId: input.projectId },
-    });
+    try {
+      await inngest.send({
+        name: 'virus/carousel.created',
+        data: { carouselId: carousel.id, userId: user.id, projectId: input.projectId },
+      });
+    } catch (inngestErr) {
+      console.error('[POST /api/carousels] inngest.send failed:', inngestErr);
+      await admin
+        .from('carousel_projects')
+        .update({ status: 'failed', error: 'Failed to dispatch event' })
+        .eq('id', carousel.id);
+      return NextResponse.json({ error: 'dispatch_failed' }, { status: 500 });
+    }
 
     return NextResponse.json({ carouselId: carousel.id }, { status: 201 });
   } catch (err) {

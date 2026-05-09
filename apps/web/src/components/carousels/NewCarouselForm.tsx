@@ -5,6 +5,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Image from 'next/image';
+import { CarouselBriefSchema, CreateCarouselSchema } from '@/lib/validators/carousels';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
@@ -27,20 +28,15 @@ import type { ProjectListItem } from '@/server/projects/types';
 const { estimateCarouselCost } = carousel;
 
 // ---------------------------------------------------------------------------
-// Form schema (flattened for the form, then remapped on submit)
+// Form schema — flattened from shared validators to avoid drift
 // ---------------------------------------------------------------------------
 
-const FormSchema = z.object({
-  projectId: z.string().uuid('Seleccioná un proyecto'),
-  topic: z.string().min(3, 'Mínimo 3 caracteres').max(500),
-  angle: z.enum(['educational', 'contrarian', 'story-arc', 'before-after', 'listicle']),
-  tone: z.enum(['direct', 'authoritative', 'casual', 'contrarian']),
-  audience: z.string().max(200).optional(),
-  slideCount: z.number().int().min(3).max(10),
-  stylePreset: z.enum(['minimal', 'bold', 'editorial']),
-  language: z.enum(['es', 'en']),
-  cta: z.string().max(200).optional(),
-});
+const FormSchema = CarouselBriefSchema.merge(
+  z.object({
+    projectId: CreateCarouselSchema.shape.projectId,
+    stylePreset: CreateCarouselSchema.shape.stylePreset,
+  })
+);
 
 type FormData = z.infer<typeof FormSchema>;
 
@@ -91,6 +87,7 @@ export function NewCarouselForm({ projects }: Props) {
     control,
     watch,
     setValue,
+    getValues,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(FormSchema),
@@ -110,7 +107,6 @@ export function NewCarouselForm({ projects }: Props) {
   const watchedProjectId = watch('projectId');
   const watchedSlideCount = watch('slideCount');
   const watchedStylePreset = watch('stylePreset');
-  const watchedCta = watch('cta');
 
   // Pre-fill audience + CTA from project brand when project changes
   useEffect(() => {
@@ -125,8 +121,8 @@ export function NewCarouselForm({ projects }: Props) {
         if (data.brand.audience?.who) {
           setValue('audience', data.brand.audience.who);
         }
-        // Only set CTA if currently empty
-        if (!watchedCta && data.brand.ctas?.[0]) {
+        // Only set CTA if currently empty (read live value to avoid stale closure)
+        if (!getValues('cta') && data.brand.ctas?.[0]) {
           setValue('cta', data.brand.ctas[0]);
         }
       })
@@ -167,7 +163,11 @@ export function NewCarouselForm({ projects }: Props) {
           return;
         }
 
-        const json = (await res.json()) as { carouselId: string };
+        const json = await res.json() as Record<string, unknown>;
+        if (typeof json.carouselId !== 'string') {
+          toast.error('Respuesta inesperada del servidor.');
+          return;
+        }
         router.push(`/dashboard/carousels/${json.carouselId}`);
       } catch {
         toast.error('Error al crear el carrusel. Intentá de nuevo.');
@@ -227,13 +227,13 @@ export function NewCarouselForm({ projects }: Props) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Angle */}
             <div className="flex flex-col gap-1.5">
-              <Label>Ángulo</Label>
+              <Label htmlFor="angle">Ángulo</Label>
               <Controller
                 name="angle"
                 control={control}
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger id="angle" className="w-full">
                       <SelectValue placeholder="Elegí un ángulo" />
                     </SelectTrigger>
                     <SelectContent>
@@ -246,17 +246,20 @@ export function NewCarouselForm({ projects }: Props) {
                   </Select>
                 )}
               />
+              {errors.angle && (
+                <p className="text-xs text-destructive">{errors.angle.message}</p>
+              )}
             </div>
 
             {/* Tone */}
             <div className="flex flex-col gap-1.5">
-              <Label>Tono</Label>
+              <Label htmlFor="tone">Tono</Label>
               <Controller
                 name="tone"
                 control={control}
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger id="tone" className="w-full">
                       <SelectValue placeholder="Elegí un tono" />
                     </SelectTrigger>
                     <SelectContent>
@@ -269,6 +272,9 @@ export function NewCarouselForm({ projects }: Props) {
                   </Select>
                 )}
               />
+              {errors.tone && (
+                <p className="text-xs text-destructive">{errors.tone.message}</p>
+              )}
             </div>
           </div>
 
@@ -300,10 +306,7 @@ export function NewCarouselForm({ projects }: Props) {
                   max={10}
                   step={1}
                   value={[field.value]}
-                  onValueChange={(vals) => {
-                    const v = Array.isArray(vals) ? vals[0] : vals;
-                    field.onChange(v);
-                  }}
+                  onValueChange={(vals) => field.onChange(vals[0])}
                   aria-label="Cantidad de slides"
                 />
               )}
@@ -312,6 +315,9 @@ export function NewCarouselForm({ projects }: Props) {
               <span>3</span>
               <span>10</span>
             </div>
+            {errors.slideCount && (
+              <p className="text-xs text-destructive">{errors.slideCount.message}</p>
+            )}
           </div>
 
           {/* Style preset */}
@@ -362,13 +368,13 @@ export function NewCarouselForm({ projects }: Props) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Language */}
             <div className="flex flex-col gap-1.5">
-              <Label>Idioma</Label>
+              <Label htmlFor="language">Idioma</Label>
               <Controller
                 name="language"
                 control={control}
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger id="language" className="w-full">
                       <SelectValue placeholder="Elegí un idioma" />
                     </SelectTrigger>
                     <SelectContent>
@@ -378,6 +384,9 @@ export function NewCarouselForm({ projects }: Props) {
                   </Select>
                 )}
               />
+              {errors.language && (
+                <p className="text-xs text-destructive">{errors.language.message}</p>
+              )}
             </div>
 
             {/* CTA */}
