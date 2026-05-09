@@ -61,6 +61,15 @@ export interface CarouselFailedEvent {
   };
 }
 
+export interface CarouselCompletedEvent {
+  name: 'virus/carousel.completed';
+  data: {
+    carouselId: string;
+    userId: string;
+    captionCount: number;
+  };
+}
+
 export type CarouselEvents = {
   'virus/carousel.created': CarouselCreatedEvent;
   'virus/carousel.slides.requested': CarouselSlidesRequestedEvent;
@@ -68,4 +77,5 @@ export type CarouselEvents = {
   'virus/carousel.slides.composed.requested': CarouselSlidesComposedRequestedEvent;
   'virus/carousel.caption.requested': CarouselCaptionRequestedEvent;
   'virus/carousel.failed': CarouselFailedEvent;
+  'virus/carousel.completed': CarouselCompletedEvent;
 };

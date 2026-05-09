@@ -13,3 +13,4 @@ export { monitorAssetsFailureRate } from './monitor-assets-failure-rate.js';
 export { generateCarouselPlan } from './generate-carousel-plan.js';
 export { generateCarouselSlides } from './generate-carousel-slides.js';
 export { composeCarouselOverlay } from './compose-carousel-overlay.js';
+export { generateCarouselCaption } from './generate-carousel-caption.js';
