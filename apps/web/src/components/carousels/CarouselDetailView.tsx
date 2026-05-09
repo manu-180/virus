@@ -12,6 +12,7 @@ import type {
   CarouselCaptionRow,
 } from '@/app/(dashboard)/dashboard/carousels/[id]/page';
 import { SlideGallery } from './SlideGallery';
+import { CaptionPicker } from './CaptionPicker';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -225,17 +226,6 @@ function SlideGalleryPlaceholder({
           );
         })}
       </div>
-    </div>
-  );
-}
-
-// ─── CaptionPickerPlaceholder ─────────────────────────────────────────────────
-
-function CaptionPickerPlaceholder({ captions }: { captions: CarouselCaptionRow[] }) {
-  return (
-    <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-6">
-      <p className="text-sm text-white/40">Captions disponibles: {captions.length}</p>
-      <p className="text-xs text-white/30 mt-1">El selector de captions se implementa en Tanda 14.</p>
     </div>
   );
 }
@@ -499,6 +489,20 @@ export function CarouselDetailView({ initialData }: CarouselDetailViewProps) {
     }
   }
 
+  async function handleCaptionRegenerate() {
+    const res = await fetch(`/api/carousels/${project.id}/captions/regenerate`, { method: 'POST' });
+    if (res.status === 429) {
+      showToast('Límite de regeneraciones alcanzado (máx. 3)');
+      return;
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as { error?: string };
+      showToast(body.error ?? 'Error al regenerar captions');
+      return;
+    }
+    setCaptions([]); // Clear so picker shows loading state; polling/realtime will refetch
+  }
+
   // ── Deletable statuses ─────────────────────────────────────────────────────
   const isGenerating =
     project.status === 'generating_slides' ||
@@ -609,7 +613,13 @@ export function CarouselDetailView({ initialData }: CarouselDetailViewProps) {
         />
 
         {/* ── CAPTION PICKER ─────────────────────────────────────────────── */}
-        {captions.length > 0 && <CaptionPickerPlaceholder captions={captions} />}
+        {(project.status === 'ready' || project.status === 'generating_captions' || captions.length > 0) && (
+          <CaptionPicker
+            captions={captions}
+            carouselId={project.id}
+            onRegenerate={handleCaptionRegenerate}
+          />
+        )}
 
         {/* ── BOTTOM BAR ─────────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-white/[0.04] px-5 py-4">
