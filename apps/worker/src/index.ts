@@ -16,6 +16,9 @@ import {
   handleFailure,
   generateVisualAssets,
   monitorAssetsFailureRate,
+  generateCarouselPlan,
+  generateCarouselSlides,
+  composeCarouselOverlay,
 } from './functions/orchestrator.js';
 import { detectTrends } from './functions/detect-trends.js';
 import { generateVideoProjectAware } from './functions/generate-video-project-aware.js';
@@ -32,6 +35,9 @@ export {
   generateVideoProjectAware,
   generateVisualAssets,
   monitorAssetsFailureRate,
+  generateCarouselPlan,
+  generateCarouselSlides,
+  composeCarouselOverlay,
 };
 
 export const functions = [
@@ -46,4 +52,7 @@ export const functions = [
   generateVideoProjectAware,
   generateVisualAssets,
   monitorAssetsFailureRate,
+  generateCarouselPlan,
+  generateCarouselSlides,
+  composeCarouselOverlay,
 ] as const;

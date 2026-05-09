@@ -1,3 +1,19 @@
+import { z } from 'zod';
+
+// ---------------------------------------------------------------------------
+// Zod schemas for runtime validation (Claude JSON output, etc.)
+// ---------------------------------------------------------------------------
+
+export const SlideSpecSchema = z.object({
+  idx: z.number().int().min(0),
+  role: z.enum(['hook', 'problem', 'insight', 'data', 'example', 'cta']),
+  headline: z.string().max(60),
+  body: z.string().max(140).optional(),
+  visualPrompt: z.string().min(1),
+});
+
+export const SlideSpecArraySchema = z.array(SlideSpecSchema);
+
 // ---------------------------------------------------------------------------
 // DB row types — mirror carousel tables defined in ADR
 // ---------------------------------------------------------------------------

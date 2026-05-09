@@ -10,3 +10,6 @@ export { generateCaption } from './generate-caption.js';
 export { handleFailure } from './handle-failure.js';
 export { generateVisualAssets } from './generate-visual-assets.js';
 export { monitorAssetsFailureRate } from './monitor-assets-failure-rate.js';
+export { generateCarouselPlan } from './generate-carousel-plan.js';
+export { generateCarouselSlides } from './generate-carousel-slides.js';
+export { composeCarouselOverlay } from './compose-carousel-overlay.js';
