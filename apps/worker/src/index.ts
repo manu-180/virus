@@ -19,6 +19,7 @@ import {
   generateCarouselPlan,
   generateCarouselSlides,
   composeCarouselOverlay,
+  regenerateCarouselSlide,
 } from './functions/orchestrator.js';
 import { detectTrends } from './functions/detect-trends.js';
 import { generateVideoProjectAware } from './functions/generate-video-project-aware.js';
@@ -38,6 +39,7 @@ export {
   generateCarouselPlan,
   generateCarouselSlides,
   composeCarouselOverlay,
+  regenerateCarouselSlide,
 };
 
 export const functions = [
@@ -55,4 +57,5 @@ export const functions = [
   generateCarouselPlan,
   generateCarouselSlides,
   composeCarouselOverlay,
+  regenerateCarouselSlide,
 ] as const;

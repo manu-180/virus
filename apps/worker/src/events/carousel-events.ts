@@ -70,6 +70,15 @@ export interface CarouselCompletedEvent {
   };
 }
 
+export interface CarouselSlideRegenerateRequestedEvent {
+  name: 'virus/carousel.slide.regenerate.requested';
+  data: {
+    carouselId: string;
+    userId: string;
+    idx: number;
+  };
+}
+
 export type CarouselEvents = {
   'virus/carousel.created': CarouselCreatedEvent;
   'virus/carousel.slides.requested': CarouselSlidesRequestedEvent;
@@ -78,4 +87,5 @@ export type CarouselEvents = {
   'virus/carousel.caption.requested': CarouselCaptionRequestedEvent;
   'virus/carousel.failed': CarouselFailedEvent;
   'virus/carousel.completed': CarouselCompletedEvent;
+  'virus/carousel.slide.regenerate.requested': CarouselSlideRegenerateRequestedEvent;
 };

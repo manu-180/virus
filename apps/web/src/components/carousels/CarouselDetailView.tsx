@@ -11,6 +11,7 @@ import type {
   CarouselSlideRow,
   CarouselCaptionRow,
 } from '@/app/(dashboard)/dashboard/carousels/[id]/page';
+import { SlideGallery } from './SlideGallery';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -450,6 +451,31 @@ export function CarouselDetailView({ initialData }: CarouselDetailViewProps) {
     }
   }
 
+  async function handleRegenerate(idx: number) {
+    // Optimistic: mark the slide as pending locally so the shimmer shows immediately
+    setSlides((prev) =>
+      prev.map((s) => (s.idx === idx ? { ...s, status: 'pending', error: null } : s)),
+    );
+    try {
+      const res = await fetch(`/api/carousels/${project.id}/slides/${idx}/regenerate`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        showToast(body.error ?? 'Error al regenerar el slide');
+        // Roll back optimistic update on failure
+        setSlides((prev) =>
+          prev.map((s) => (s.idx === idx ? { ...s, status: 'failed' } : s)),
+        );
+      }
+    } catch {
+      showToast('Error al regenerar el slide');
+      setSlides((prev) =>
+        prev.map((s) => (s.idx === idx ? { ...s, status: 'failed' } : s)),
+      );
+    }
+  }
+
   async function handleDownload() {
     try {
       const res = await fetch(`/api/carousels/${project.id}/export`);
@@ -575,7 +601,12 @@ export function CarouselDetailView({ initialData }: CarouselDetailViewProps) {
         <StatusTimeline status={project.status} />
 
         {/* ── SLIDE GALLERY ──────────────────────────────────────────────── */}
-        <SlideGalleryPlaceholder slides={slides} slideCount={project.slide_count} />
+        <SlideGallery
+          carouselId={project.id}
+          slides={slides}
+          slideCount={project.slide_count}
+          onRegenerate={handleRegenerate}
+        />
 
         {/* ── CAPTION PICKER ─────────────────────────────────────────────── */}
         {captions.length > 0 && <CaptionPickerPlaceholder captions={captions} />}
