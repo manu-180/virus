@@ -14,6 +14,174 @@ export type Database = {
   }
   public: {
     Tables: {
+      carousel_captions: {
+        Row: {
+          carousel_id: string
+          created_at: string
+          framework: string
+          id: string
+          selected: boolean
+          text: string
+          user_id: string
+          variant_idx: number
+        }
+        Insert: {
+          carousel_id: string
+          created_at?: string
+          framework: string
+          id?: string
+          selected?: boolean
+          text: string
+          user_id: string
+          variant_idx: number
+        }
+        Update: {
+          carousel_id?: string
+          created_at?: string
+          framework?: string
+          id?: string
+          selected?: boolean
+          text?: string
+          user_id?: string
+          variant_idx?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "carousel_captions_carousel_id_fkey"
+            columns: ["carousel_id"]
+            isOneToOne: false
+            referencedRelation: "carousel_projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "carousel_captions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      carousel_projects: {
+        Row: {
+          brief: string
+          created_at: string
+          deleted_at: string | null
+          error: string | null
+          id: string
+          inngest_run_id: string | null
+          project_id: string
+          slide_count: number
+          status: string
+          style_preset: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          brief: string
+          created_at?: string
+          deleted_at?: string | null
+          error?: string | null
+          id?: string
+          inngest_run_id?: string | null
+          project_id: string
+          slide_count?: number
+          status?: string
+          style_preset?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          brief?: string
+          created_at?: string
+          deleted_at?: string | null
+          error?: string | null
+          id?: string
+          inngest_run_id?: string | null
+          project_id?: string
+          slide_count?: number
+          status?: string
+          style_preset?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "carousel_projects_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "carousel_projects_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      carousel_slides: {
+        Row: {
+          carousel_id: string
+          composed_path: string | null
+          created_at: string
+          error: string | null
+          id: string
+          idx: number
+          image_path: string | null
+          overlay_text: string | null
+          prompt: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          carousel_id: string
+          composed_path?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          idx: number
+          image_path?: string | null
+          overlay_text?: string | null
+          prompt: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          carousel_id?: string
+          composed_path?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          idx?: number
+          image_path?: string | null
+          overlay_text?: string | null
+          prompt?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "carousel_slides_carousel_id_fkey"
+            columns: ["carousel_id"]
+            isOneToOne: false
+            referencedRelation: "carousel_projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "carousel_slides_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       content_pillars: {
         Row: {
           created_at: string
