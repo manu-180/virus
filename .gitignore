@@ -57,3 +57,6 @@ next-env.d.ts
 /apps/web/test-results/
 /apps/web/.e2e-dist/
 /apps/web/blob-report/
+
+# Carousel sample output
+tmp-carousel-samples/
