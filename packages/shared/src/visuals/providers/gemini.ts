@@ -13,8 +13,8 @@ export interface GeminiGenInput {
   prompt: string;
   /** Theme color (informational — the prompt builder bakes the accent in). */
   themeColor: string;
-  /** Aspect ratio. Default `9:16` for vertical short-form. */
-  aspectRatio?: '9:16' | '1:1';
+  /** Aspect ratio. Default `9:16` for vertical short-form. `4:5` for IG carousel. */
+  aspectRatio?: '9:16' | '4:5' | '1:1';
 }
 
 /** Successful Gemini image generation result. */
@@ -59,9 +59,10 @@ export async function generateImageGemini(input: GeminiGenInput): Promise<Gemini
 
   // Nano Banana takes aspect-ratio as part of the prompt because the
   // generateContent endpoint has no structured aspectRatio parameter.
+  const dims = dimensionsFor(aspectRatio);
   const promptWithAspect =
     `${input.prompt}\n\n` +
-    `Render as a vertical ${aspectRatio} (${aspectRatio === '9:16' ? '1080x1920' : '1024x1024'}) composition.`;
+    `Render as a ${aspectRatio === '1:1' ? 'square' : 'vertical'} ${aspectRatio} (${dims[0]}x${dims[1]}) composition.`;
 
   const response = await ai.models.generateContent({
     model,
@@ -97,10 +98,12 @@ export async function generateImageGemini(input: GeminiGenInput): Promise<Gemini
   };
 }
 
-function dimensionsFor(aspectRatio: '9:16' | '1:1'): [number, number] {
+function dimensionsFor(aspectRatio: '9:16' | '4:5' | '1:1'): [number, number] {
   switch (aspectRatio) {
     case '9:16':
       return [1080, 1920];
+    case '4:5':
+      return [1080, 1350];
     case '1:1':
       return [1024, 1024];
   }
