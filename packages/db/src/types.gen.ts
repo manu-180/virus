@@ -65,6 +65,7 @@ export type Database = {
       carousel_projects: {
         Row: {
           brief: string
+          caption_regen_count: number
           created_at: string
           deleted_at: string | null
           error: string | null
@@ -79,6 +80,7 @@ export type Database = {
         }
         Insert: {
           brief: string
+          caption_regen_count?: number
           created_at?: string
           deleted_at?: string | null
           error?: string | null
@@ -93,6 +95,7 @@ export type Database = {
         }
         Update: {
           brief?: string
+          caption_regen_count?: number
           created_at?: string
           deleted_at?: string | null
           error?: string | null
