@@ -39,13 +39,16 @@ export function pickProvider(category: AssetCategory): ProviderChoice {
 }
 
 /**
- * Default Luma clip duration in seconds for each slot. CTA is shorter
- * because it sits behind a single line of voiceover; hook/reveal get more
- * room for visual setup.
+ * Default Luma clip duration in seconds for each slot.
  *
- * Reveal is an image (no duration), but the function returns 6 for
+ * Luma Ray 2 ONLY accepts `'5s'`, `'9s'` or `'10s'`. Any other value (e.g.
+ * `'6s'`) returns HTTP 400 `"Input should be '5s', '9s' or '10s' duration"`.
+ * - `cta`: 5s — sits behind a single line of voiceover.
+ * - `hook`: 9s — needs more room for visual setup before the reveal.
+ *
+ * Reveal is an image (no duration), but the function returns 9 for
  * completeness — callers should ignore it for image slots.
  */
 export function defaultDurationFor(category: AssetCategory): number {
-  return category === 'cta' ? 5 : 6;
+  return category === 'cta' ? 5 : 9;
 }
