@@ -2,6 +2,7 @@ export const NAV_ITEMS = [
   { id: 'home', label: 'Inicio', href: '/dashboard', icon: 'Home' },
   { id: 'ideas', label: 'Ideas', href: '/dashboard/ideas', icon: 'Lightbulb' },
   { id: 'pipeline', label: 'Pipeline', href: '/dashboard/pipeline', icon: 'Clapperboard' },
+  { id: 'carousels', label: 'Carruseles', href: '/dashboard/carousels', icon: 'LayoutGrid' },
   { id: 'assets', label: 'Biblioteca', href: '/dashboard/assets', icon: 'Library' },
   { id: 'calendar', label: 'Calendario', href: '/dashboard/calendar', icon: 'Calendar' },
   { id: 'performance', label: 'Performance', href: '/dashboard/performance', icon: 'BarChart3' },
