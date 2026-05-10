@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Check, TriangleAlert, Loader2, RefreshCcw, Download, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, TriangleAlert, Loader2, RefreshCcw, Download, Trash2, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/browser';
 import type {
@@ -249,6 +249,107 @@ function useToast() {
   }, []);
 
   return { message, showToast };
+}
+
+// ─── CarouselCostDetails ──────────────────────────────────────────────────────
+
+interface CostData {
+  totalUsd: number;
+  totalCents: number;
+  byProvider: Record<string, number>;
+  recordCount: number;
+  generationTimeMs: number;
+}
+
+const PROVIDER_LABELS: Record<string, string> = {
+  gemini: 'Gemini (imágenes)',
+  anthropic: 'Claude (texto)',
+};
+
+function CarouselCostDetails({ carouselId }: { carouselId: string }) {
+  const [open, setOpen] = useState(false);
+  const [cost, setCost] = useState<CostData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || cost) return;
+    setLoading(true);
+    fetch(`/api/carousels/${carouselId}/cost`)
+      .then((r) => r.json() as Promise<CostData>)
+      .then(setCost)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [open, carouselId, cost]);
+
+  const genTimeSec = cost ? Math.round(cost.generationTimeMs / 1000) : 0;
+  const genTimeLabel =
+    genTimeSec < 60
+      ? `${genTimeSec}s`
+      : `${Math.floor(genTimeSec / 60)}m ${genTimeSec % 60}s`;
+
+  return (
+    <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-5 py-4 text-left"
+      >
+        <span className="text-xs font-medium uppercase tracking-widest text-white/40">
+          Detalles de costo
+        </span>
+        <ChevronDown
+          className={cn('w-4 h-4 text-white/30 transition-transform', open && 'rotate-180')}
+        />
+      </button>
+
+      {open && (
+        <div className="border-t border-white/[0.06] px-5 pb-5 pt-4 space-y-3">
+          {loading && (
+            <div className="flex items-center gap-2 text-white/40 text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Calculando...
+            </div>
+          )}
+
+          {!loading && cost && (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-white/50">Costo total</span>
+                <span className="text-sm font-semibold text-[#C8FF57] tabular-nums">
+                  ${cost.totalUsd.toFixed(4)} USD
+                </span>
+              </div>
+
+              {Object.entries(cost.byProvider).map(([provider, usd]) => (
+                <div key={provider} className="flex items-center justify-between pl-4">
+                  <span className="text-xs text-white/40">
+                    {PROVIDER_LABELS[provider] ?? provider}
+                  </span>
+                  <span className="text-xs text-white/60 tabular-nums">
+                    ${usd.toFixed(4)}
+                  </span>
+                </div>
+              ))}
+
+              <div className="flex items-center justify-between border-t border-white/[0.06] pt-3">
+                <span className="text-xs text-white/50">Tiempo de generación</span>
+                <span className="text-xs text-white/60 tabular-nums">{genTimeLabel}</span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-white/50">Registros AI</span>
+                <span className="text-xs text-white/60 tabular-nums">{cost.recordCount}</span>
+              </div>
+            </>
+          )}
+
+          {!loading && !cost && (
+            <p className="text-xs text-white/30">No hay datos de costo disponibles.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -619,6 +720,11 @@ export function CarouselDetailView({ initialData }: CarouselDetailViewProps) {
             carouselId={project.id}
             onRegenerate={handleCaptionRegenerate}
           />
+        )}
+
+        {/* ── COST DETAILS ───────────────────────────────────────────────── */}
+        {project.status === 'ready' && (
+          <CarouselCostDetails carouselId={project.id} />
         )}
 
         {/* ── BOTTOM BAR ─────────────────────────────────────────────────── */}

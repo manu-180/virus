@@ -277,6 +277,25 @@ export const generateCarouselCaption = inngest.createFunction(
         FRAMEWORKS.map((fw) => generateVariant(brief, slides, brand, fw)),
       );
 
+      // Claude Sonnet 4.6: ~$3/Mtok input, ~$15/Mtok output
+      const COST_PER_VARIANT_USD = (600 / 1_000_000) * 3.0 + (200 / 1_000_000) * 15.0;
+      const UNITS_PER_VARIANT = 800; // 600 input + 200 output tokens
+
+      const db = getAdminClient();
+      await Promise.allSettled(
+        results
+          .filter((r) => r.text !== null)
+          .map((r) =>
+            db.from('usage_records').insert({
+              user_id: userId,
+              service: 'anthropic',
+              cost_usd: COST_PER_VARIANT_USD,
+              units: UNITS_PER_VARIANT,
+              metadata: { carouselId, operation: 'gen-caption', framework: r.framework },
+            }),
+          ),
+      );
+
       console.log(JSON.stringify({
         fn: 'generate-carousel-caption',
         step: 'gen-variants',

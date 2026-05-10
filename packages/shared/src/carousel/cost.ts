@@ -1,4 +1,35 @@
 // ---------------------------------------------------------------------------
+// Carousel cost estimation and usage recording.
+// ---------------------------------------------------------------------------
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SupabaseClient = { from: (table: string) => any };
+
+export async function recordCarouselUsage(args: {
+  supabase: SupabaseClient;
+  userId: string;
+  carouselId: string;
+  provider: 'gemini' | 'claude' | 'sharp';
+  operation: string;
+  quantity: number;
+  costCents: number;
+}): Promise<void> {
+  const { supabase, userId, carouselId, provider, operation, quantity, costCents } = args;
+  if (provider === 'sharp') return; // CPU-only, $0 — no API cost to track
+  const service = provider === 'claude' ? 'anthropic' : 'gemini';
+  const { error } = await supabase.from('usage_records').insert({
+    user_id: userId,
+    service,
+    cost_usd: costCents / 100,
+    units: quantity,
+    metadata: { carouselId, operation },
+  });
+  if (error) {
+    console.warn('[recordCarouselUsage] non-fatal:', error.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Carousel cost estimation — USD before calling any external API.
 // ---------------------------------------------------------------------------
 

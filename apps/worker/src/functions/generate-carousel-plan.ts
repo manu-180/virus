@@ -231,6 +231,7 @@ export const generateCarouselPlan = inngest.createFunction(
           result: specs,
           actualCost: ESTIMATED_COST_USD,
           actualUnits: 1200 + brief.slideCount * 80,
+          metadata: { carouselId, operation: 'plan-slides', model: MODELS.default },
         };
       });
     });

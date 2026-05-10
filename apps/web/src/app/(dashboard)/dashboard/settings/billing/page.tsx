@@ -1,5 +1,7 @@
-import { Brain, Mic, FileText, Cloud, ExternalLink } from 'lucide-react';
+import { Brain, Mic, FileText, Cloud, ExternalLink, ImageIcon } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 
 export const metadata = {
   title: 'Costos | Configuración',
@@ -52,7 +54,19 @@ const SERVICES: ServiceRow[] = [
 // Page
 // ---------------------------------------------------------------------------
 
-export default function BillingPage() {
+export default async function BillingPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) redirect('/login');
+
+  const { data: carouselSpendResult } = await supabase.rpc('sum_carousel_spend_this_month', {
+    p_user_id: user.id,
+  });
+  const carouselSpendUsd = Number(carouselSpendResult ?? 0);
+
   return (
     <div className="flex flex-col gap-6">
 
@@ -70,6 +84,25 @@ export default function BillingPage() {
           Costos aproximados en base al uso promedio mensual.
           Los valores reales dependen del volumen de contenido generado.
         </p>
+      </div>
+
+      {/* Carousel spend this month */}
+      <div className="bg-bg-surface rounded-lg border border-border p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center justify-center size-9 rounded-md bg-bg-surface-high border border-border shrink-0">
+            <ImageIcon className="size-4 text-text-secondary" aria-hidden="true" />
+          </div>
+          <div>
+            <p className="text-text-primary text-sm font-semibold leading-tight">Carruseles este mes</p>
+            <p className="text-text-tertiary text-xs mt-0.5">Gasto real en AI para generación de carruseles</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-text-secondary text-sm">Gasto total en carruseles</span>
+          <span className="text-warning text-base font-semibold tabular-nums">
+            ${carouselSpendUsd.toFixed(4)} USD
+          </span>
+        </div>
       </div>
 
       {/* Service rows */}

@@ -144,13 +144,13 @@ export async function withQuota<T>(
   service: QuotaService,
   userId: string,
   estimatedCost: number,
-  fn: () => Promise<{ result: T; actualCost: number; actualUnits: number }>,
+  fn: () => Promise<{ result: T; actualCost: number; actualUnits: number; metadata?: Record<string, unknown> }>,
 ): Promise<T> {
   const quota = await checkQuota({ userId, service, estimatedCostUsd: estimatedCost });
   if (!quota.allowed) {
     throw new Error(`[quota] ${service}: ${quota.reason}`);
   }
-  const { result, actualCost, actualUnits } = await fn();
-  await recordUsage({ userId, service, units: actualUnits, costUsd: actualCost });
+  const { result, actualCost, actualUnits, metadata } = await fn();
+  await recordUsage({ userId, service, units: actualUnits, costUsd: actualCost, metadata });
   return result;
 }
