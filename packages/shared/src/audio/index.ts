@@ -26,7 +26,12 @@ export async function generateAudioFromScript(
   }
 
   const rawMp3 = path.join(input.outputDir, 'raw.mp3');
-  await synthesize({ text: concatenated, preset: presetKey, outputPath: rawMp3 });
+  await synthesize({
+    text: concatenated,
+    preset: presetKey,
+    outputPath: rawMp3,
+    ...(input.voiceId !== undefined && { voiceId: input.voiceId }),
+  });
 
   const processedMp3 = path.join(input.outputDir, 'processed.mp3');
   const postProcessResult = await postProcess({

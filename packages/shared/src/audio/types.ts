@@ -34,6 +34,7 @@ export interface GenerateAudioInput {
   segments: Array<{ voiceover: string }>;
   preset: import('./voice-config').VoicePreset;
   outputDir: string;
+  voiceId?: string;
 }
 
 export interface SegmentTiming {

@@ -13,11 +13,18 @@ interface Props {
   onBack: () => void;
 }
 
-type VoiceState = 'idle' | 'uploading' | 'done' | 'skipped';
+type VoiceState = 'idle' | 'uploading' | 'cloning' | 'done' | 'skipped';
+
+const VOICE_ID_REGEX = /^[a-zA-Z0-9]{20}$/;
 
 export function StepVoice({ profile, onNext, onBack }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const initialState: VoiceState = profile?.default_voice_clone_id
+  // A real ElevenLabs voice id is 20 alphanumeric chars. Treat anything else
+  // (including legacy `onboarding_<timestamp>` placeholders) as not-yet-done
+  // so the user is prompted to actually upload a sample.
+  const existingId = profile?.default_voice_clone_id;
+  const hasRealVoice = !!existingId && VOICE_ID_REGEX.test(existingId);
+  const initialState: VoiceState = hasRealVoice
     ? 'done'
     : profile?.onboarding_voice_skipped
     ? 'skipped'
@@ -29,22 +36,74 @@ export function StepVoice({ profile, onNext, onBack }: Props) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setState('uploading');
-    // TODO (T4-P06): Upload to Supabase Storage voice_samples bucket,
-    // call ElevenLabs /v1/voices/add API, save returned elevenlabs_voice_id
-    // via saveVoiceStep({ voiceCloneId }).
-    await new Promise((r) => setTimeout(r, 1200));
-    const placeholderVoiceId = `onboarding_${Date.now()}`;
+    // Clear input value so re-selecting the same file fires onChange again
+    if (fileRef.current) fileRef.current.value = '';
 
-    startTransition(async () => {
-      const result = await saveVoiceStep({ voiceCloneId: placeholderVoiceId, skip: false });
-      if (!result.ok) {
-        toast.error(result.error);
+    setState('uploading');
+
+    try {
+      // 1. Upload audio sample to Supabase Storage (voice_samples bucket)
+      const uploadForm = new FormData();
+      uploadForm.append('file', file);
+
+      const uploadRes = await fetch('/api/voice/upload-sample', {
+        method: 'POST',
+        body: uploadForm,
+      });
+      const uploadData = await uploadRes.json();
+
+      if (!uploadRes.ok) {
+        toast.error(`No se pudo subir el audio: ${uploadData?.error?.message ?? 'Error desconocido'}`);
         setState('idle');
         return;
       }
-      setState('done');
-    });
+
+      const storagePath = uploadData.storagePath as string;
+
+      // 2. Clone the voice in ElevenLabs and persist the returned voice_id
+      setState('cloning');
+      const cloneRes = await fetch('/api/voice/clone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storagePath }),
+      });
+      const cloneData = await cloneRes.json();
+
+      if (!cloneRes.ok) {
+        const code = cloneData?.error?.code ?? 'UNKNOWN';
+        const msg =
+          code === 'QUOTA_EXCEEDED'
+            ? 'Quota de ElevenLabs agotada. Revisá tu plan.'
+            : code === 'VOICE_CLONE_FAILED'
+            ? 'Audio de baja calidad. Grabá en un lugar más silencioso.'
+            : code === 'SERVER_MISCONFIGURATION'
+            ? 'El servicio de clonación no está configurado.'
+            : `Error al clonar la voz: ${cloneData?.error?.message ?? 'desconocido'}`;
+        toast.error(msg);
+        setState('idle');
+        return;
+      }
+
+      const voiceId = cloneData.voiceId as string;
+
+      // 3. Mark onboarding voice step as completed (clears skipped flag).
+      //    The /api/voice/clone route already wrote default_voice_clone_id;
+      //    saveVoiceStep just rewrites it idempotently and toggles the flag.
+      startTransition(async () => {
+        const result = await saveVoiceStep({ voiceCloneId: voiceId, skip: false });
+        if (!result.ok) {
+          toast.error(result.error);
+          setState('idle');
+          return;
+        }
+        setState('done');
+        toast.success('Voz clonada correctamente.');
+      });
+    } catch (err) {
+      console.error('[onboarding/step-voice] error:', err);
+      toast.error('Error de red al procesar el audio.');
+      setState('idle');
+    }
   };
 
   const handleSkip = () => {
@@ -99,10 +158,14 @@ export function StepVoice({ profile, onNext, onBack }: Props) {
             <Button
               variant="outline"
               onClick={() => fileRef.current?.click()}
-              disabled={state === 'uploading' || isPending}
+              disabled={state === 'uploading' || state === 'cloning' || isPending}
             >
               <Upload size={14} className="mr-2" />
-              {state === 'uploading' ? 'Procesando...' : 'Elegir archivo'}
+              {state === 'uploading'
+                ? 'Subiendo audio...'
+                : state === 'cloning'
+                ? 'Clonando tu voz...'
+                : 'Elegir archivo'}
             </Button>
             <input
               ref={fileRef}

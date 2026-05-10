@@ -157,12 +157,40 @@ export const synthesizeAudio = inngest.createFunction(
     });
 
     // ------------------------------------------------------------------
+    // 1.5 Load the user's cloned voice id (if any). ElevenLabs voice ids are
+    // 20-char alphanumeric — anything else (e.g. legacy `onboarding_<ts>`
+    // placeholders from the unimplemented onboarding step) is ignored so the
+    // synthesizer falls back to ELEVENLABS_VOICE_ID env default.
+    // ------------------------------------------------------------------
+    const userVoiceId = await step.run('load-user-voice-id', async () => {
+      const { data, error } = await getAdminClient()
+        .from('profiles')
+        .select('default_voice_clone_id')
+        .eq('id', video.user_id)
+        .single();
+
+      if (error || !data) {
+        console.log({ fn: 'synthesize-audio', step: 'load-user-voice-id', videoId, voiceId: null, reason: 'profile_not_found' });
+        return null;
+      }
+
+      const raw = data.default_voice_clone_id;
+      if (!raw || !/^[a-zA-Z0-9]{20}$/.test(raw)) {
+        console.log({ fn: 'synthesize-audio', step: 'load-user-voice-id', videoId, voiceId: null, raw, reason: raw ? 'invalid_format_fallback_to_default' : 'no_clone' });
+        return null;
+      }
+
+      console.log({ fn: 'synthesize-audio', step: 'load-user-voice-id', videoId, voiceId: raw });
+      return raw;
+    });
+
+    // ------------------------------------------------------------------
     // 2 & 3. Generate audio (mkdir + TTS + post-process) with cleanup in finally
     // ------------------------------------------------------------------
     const outputDir = `/tmp/virus/${videoId}/audio`;
 
     const audioResult = await step.run('generate-audio', async () => {
-      console.log({ fn: 'synthesize-audio', step: 'generate-audio', videoId, outputDir });
+      console.log({ fn: 'synthesize-audio', step: 'generate-audio', videoId, outputDir, voiceId: userVoiceId ?? 'env_default' });
 
       await mkdir(outputDir, { recursive: true });
 
@@ -178,6 +206,7 @@ export const synthesizeAudio = inngest.createFunction(
             segments: script.segments,
             preset,
             outputDir,
+            ...(userVoiceId !== null && { voiceId: userVoiceId }),
           });
           // ElevenLabs pricing ~$0.30/1000 chars
           return { result: audio, actualCost: totalChars * 0.0003, actualUnits: totalChars };
