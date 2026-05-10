@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { User, Mic, Sparkles, Calendar, CreditCard, type LucideIcon } from 'lucide-react';
+import { User, Mic, Sparkles, Calendar, CreditCard, Palette, type LucideIcon } from 'lucide-react';
 
 type NavItem = {
   href: string;
@@ -14,6 +14,7 @@ const NAV: NavItem[] = [
   { href: '/dashboard/settings/account', label: 'Mi cuenta', icon: User },
   { href: '/dashboard/settings/voice', label: 'Voz clonada', icon: Mic },
   { href: '/dashboard/settings/brand', label: 'Brand voice', icon: Sparkles },
+  { href: '/dashboard/settings/visual-style', label: 'Estilo visual', icon: Palette },
   { href: '/dashboard/settings/schedule', label: 'Calendario', icon: Calendar },
   { href: '/dashboard/settings/billing', label: 'Costos', icon: CreditCard },
 ];

@@ -8,12 +8,14 @@ import { StepWelcome } from './_steps/step-welcome';
 import { StepBrand } from './_steps/step-brand';
 import { StepVoice } from './_steps/step-voice';
 import { StepFirstVideo } from './_steps/step-first-video';
+import { StepVisualStyle } from './_steps/step-visual-style';
 
 const STEPS = [
   { label: 'Bienvenida', number: 1 },
   { label: 'Tu marca', number: 2 },
-  { label: 'Tu voz', number: 3 },
-  { label: 'Tu primer video', number: 4 },
+  { label: 'Estilo visual', number: 3 },
+  { label: 'Tu voz', number: 4 },
+  { label: 'Tu primer video', number: 5 },
 ];
 
 const slideVariants = {
@@ -45,8 +47,9 @@ export function OnboardingWizard({ initialStep, profile }: Props) {
   const stepContent = [
     <StepWelcome key={0} onNext={() => goTo(1)} />,
     <StepBrand key={1} profile={profile} onNext={() => goTo(2)} onBack={() => goTo(0)} />,
-    <StepVoice key={2} profile={profile} onNext={() => goTo(3)} onBack={() => goTo(1)} />,
-    <StepFirstVideo key={3} profile={profile} onBack={() => goTo(2)} />,
+    <StepVisualStyle key={2} profile={profile} onNext={() => goTo(3)} onBack={() => goTo(1)} />,
+    <StepVoice key={3} profile={profile} onNext={() => goTo(4)} onBack={() => goTo(2)} />,
+    <StepFirstVideo key={4} profile={profile} onBack={() => goTo(3)} />,
   ];
 
   return (

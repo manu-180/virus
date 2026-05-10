@@ -17,9 +17,11 @@ function resolveInitialStep(
 
   const hasVoice = profile.default_voice_clone_id || profile.onboarding_voice_skipped;
 
-  if (hasBrand && hasVoice) return 3;
-  if (hasBrand) return 2;
-  return 0;
+  // Step 4 = Voice (index 3), Step 2 = Visual Style (index 2), Step 1 = Brand (index 1)
+  // Visual style is optional — skip it in resume detection (land on Voice if brand done)
+  if (hasBrand && hasVoice) return 4; // FirstVideo
+  if (hasBrand) return 3;             // Voice (skip optional visual style on resume)
+  return 0;                           // Welcome
 }
 
 export default async function OnboardingPage() {

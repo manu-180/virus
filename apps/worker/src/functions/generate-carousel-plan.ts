@@ -49,6 +49,7 @@ interface ProjectBrandRow {
   ctas: unknown;
   do_not_say: unknown;
   audience: unknown;
+  visual_style: unknown; // { defaultPreset?: string; accentColor?: string; fontPreference?: string; sampleImageUrls?: string[] }
 }
 
 // ---------------------------------------------------------------------------
@@ -71,15 +72,23 @@ function buildBrand(projectId: string, row: ProjectBrandRow): ProjectBrand {
   };
 }
 
-function parseBrief(row: CarouselProjectRow): CarouselBrief {
+function parseBrief(
+  row: CarouselProjectRow,
+  brandVisualStyle?: { defaultPreset?: string },
+): CarouselBrief {
   const parsed = JSON.parse(row.brief) as Partial<CarouselBrief>;
+  // Use explicit stylePreset from brief first, then brand preference, then row column
+  const stylePreset =
+    parsed.stylePreset ??
+    (brandVisualStyle?.defaultPreset as CarouselBrief['stylePreset'] | undefined) ??
+    (row.style_preset as CarouselBrief['stylePreset']);
   return {
     topic: parsed.topic ?? '',
     angle: parsed.angle ?? 'educational',
     tone: parsed.tone ?? 'direct',
     audience: parsed.audience ?? '',
     slideCount: parsed.slideCount ?? row.slide_count,
-    stylePreset: (parsed.stylePreset ?? row.style_preset) as CarouselBrief['stylePreset'],
+    stylePreset,
     language: parsed.language ?? 'es',
     cta: parsed.cta ?? '',
   };
@@ -183,11 +192,10 @@ export const generateCarouselPlan = inngest.createFunction(
       }
 
       const row = carouselRow as CarouselProjectRow;
-      const parsedBrief = parseBrief(row);
 
       const { data: brandRow, error: brandErr } = await db
         .from('project_brand')
-        .select('brand_name, one_liner, voice_tone, ctas, do_not_say, audience')
+        .select('brand_name, one_liner, voice_tone, ctas, do_not_say, audience, visual_style')
         .eq('project_id', row.project_id)
         .eq('is_current', true)
         .single();
@@ -196,14 +204,20 @@ export const generateCarouselPlan = inngest.createFunction(
         throw new Error(`CAROUSEL_NO_BRAND:${row.project_id} — brand not configured`);
       }
 
+      const brandVisualStyle = (brandRow.visual_style as { defaultPreset?: string; accentColor?: string } | null) ?? {};
+      const parsedBrief = parseBrief(row, brandVisualStyle);
+
       const builtBrand = buildBrand(row.project_id, brandRow as ProjectBrandRow);
 
+      const accentColorOverride = brandVisualStyle?.accentColor;
       console.log(JSON.stringify({
         fn: 'generate-carousel-plan',
         step: 'load-context',
         carouselId,
         projectId: row.project_id,
         slideCount: parsedBrief.slideCount,
+        stylePreset: parsedBrief.stylePreset,
+        accentColorOverride: accentColorOverride ?? null,
       }));
 
       return { carousel: row, brief: parsedBrief, brand: builtBrand };
