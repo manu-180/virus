@@ -15,3 +15,4 @@ export { generateCarouselSlides } from './generate-carousel-slides.js';
 export { composeCarouselOverlay } from './compose-carousel-overlay.js';
 export { generateCarouselCaption } from './generate-carousel-caption.js';
 export { regenerateCarouselSlide } from './regenerate-carousel-slide.js';
+export { handleCarouselFailure } from './handle-carousel-failure.js';

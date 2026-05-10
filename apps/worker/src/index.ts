@@ -18,8 +18,10 @@ import {
   monitorAssetsFailureRate,
   generateCarouselPlan,
   generateCarouselSlides,
+  generateCarouselCaption,
   composeCarouselOverlay,
   regenerateCarouselSlide,
+  handleCarouselFailure,
 } from './functions/orchestrator.js';
 import { detectTrends } from './functions/detect-trends.js';
 import { generateVideoProjectAware } from './functions/generate-video-project-aware.js';
@@ -38,8 +40,10 @@ export {
   monitorAssetsFailureRate,
   generateCarouselPlan,
   generateCarouselSlides,
+  generateCarouselCaption,
   composeCarouselOverlay,
   regenerateCarouselSlide,
+  handleCarouselFailure,
 };
 
 export const functions = [
@@ -56,6 +60,8 @@ export const functions = [
   monitorAssetsFailureRate,
   generateCarouselPlan,
   generateCarouselSlides,
+  generateCarouselCaption,
   composeCarouselOverlay,
   regenerateCarouselSlide,
+  handleCarouselFailure,
 ] as const;
