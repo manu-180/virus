@@ -1,0 +1,100 @@
+name: E2E Carousel Smoke Test
+
+# Runs on PRs that touch carousel-related code.
+# Uses DB injection (no real AI pipeline) so it's fast and free.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/web/src/app/(dashboard)/dashboard/carousels/**'
+      - 'apps/web/src/app/api/carousels/**'
+      - 'apps/web/src/components/carousels/**'
+      - 'apps/web/e2e/carousel-flow.spec.ts'
+      - 'apps/worker/src/functions/*carousel*'
+      - 'packages/shared/src/carousel/**'
+
+concurrency:
+  group: e2e-carousel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Carousel Unit + Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run carousel unit + integration tests
+        run: pnpm --filter @virus/shared test --reporter=verbose
+        env:
+          CI: true
+
+  e2e:
+    name: Carousel E2E Smoke (Chromium)
+    runs-on: ubuntu-latest
+    needs: [unit]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .turbo
+            apps/web/.next/cache
+          key: ${{ runner.os }}-next-carousel-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-next-carousel-${{ hashFiles('**/pnpm-lock.yaml') }}-
+            ${{ runner.os }}-next-carousel-
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @virus/web exec playwright install --with-deps chromium
+
+      - name: Build web app
+        run: pnpm --filter @virus/web build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Run carousel E2E smoke test
+        # Tests use admin DB injection — no real AI pipeline needed.
+        # SKIP_E2E is NOT set so smoke tests always run.
+        run: pnpm --filter @virus/web exec playwright test e2e/carousel-flow.spec.ts
+        env:
+          CI: true
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL }}
+          E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: carousel-playwright-report-${{ github.sha }}
+          path: apps/web/playwright-report/
+          retention-days: 7
