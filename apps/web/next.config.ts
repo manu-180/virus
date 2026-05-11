@@ -28,20 +28,19 @@ const nextConfig: NextConfig = {
   // build-time page data collection. Marking it server-external makes Next
   // require() it from node_modules normally, and the standalone tracer copies
   // the platform-specific binaries into the runtime image.
-  serverExternalPackages: ['sharp'],
+  serverExternalPackages: ['sharp', 'satori'],
 
   webpack: (config, { isServer }) => {
-    // Always externalize sharp. It uses dlopen + dynamic requires for its
-    // native binary; webpack can't trace those paths, so bundling it produces
-    // chunks that crash at runtime with "Could not load the sharp module
-    // using the linux-x64 runtime". `serverExternalPackages` above only
-    // covers Server Components — Route Handlers (where carousel/composer.ts
-    // is transitively imported) still get bundled, so the webpack-level
-    // external is required. On the client it's a no-op since browsers don't
-    // load native addons.
+    // Always externalize sharp and satori. Both have runtime deps that webpack
+    // cannot trace: sharp uses dlopen + dynamic requires for its native binary;
+    // satori embeds yoga-wasm-web (WebAssembly) which fails when bundled.
+    // `serverExternalPackages` only covers Server Components — Route Handlers
+    // (where carousel/composer.ts is transitively imported) still get bundled,
+    // so the webpack-level external is required for both.
     config.externals = [
       ...(Array.isArray(config.externals) ? config.externals : []),
       'sharp',
+      'satori',
     ];
     // Workspace packages use NodeNext-style imports with explicit `.js` —
     // tell webpack to also try `.ts`/`.tsx` when resolving these.
