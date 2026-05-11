@@ -51,14 +51,13 @@ docs
 .conductor
 .plans
 
-# ─── Heavy app sources not used by the worker ────────────────────────────────
+# ─── Heavy app sources not used by either Dockerfile ─────────────────────────
 # These dirs are big but we keep their package.json for workspace resolution.
-# Exclude e2e tests, build outputs, public assets, etc., but allow manifests.
+# NOTE: do NOT exclude apps/web/public — the web Dockerfile needs it for
+# static assets (carousel presets, templates). Same for apps/ig-publisher/app
+# which the ig-publisher Dockerfile copies. Only exclude truly unused stuff.
 apps/web/.next
 apps/web/playwright-report
 apps/web/test-results
-apps/web/public
 apps/web/e2e
-apps/ig-publisher/app
-apps/ig-publisher/scripts
 packages/remotion/out
