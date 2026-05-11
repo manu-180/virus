@@ -14,8 +14,10 @@ import {
   Zap,
   Library,
   LayoutGrid,
+  LogOut,
   type LucideIcon,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { NAV_ITEMS } from '@/lib/nav-config';
 import { UserMenu } from './user-menu';
@@ -45,7 +47,14 @@ interface SidebarProps {
 
 function NavItems({ email, avatarUrl }: { email: string; avatarUrl?: string | undefined }) {
   const pathname = usePathname();
+  const router = useRouter();
   const navRef = useRef<HTMLElement>(null);
+
+  async function handleSignOut() {
+    await fetch('/auth/sign-out', { method: 'POST' });
+    router.push('/login');
+    router.refresh();
+  }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLElement>) {
     const items = navRef.current?.querySelectorAll<HTMLAnchorElement>('a[href]');
@@ -118,7 +127,7 @@ function NavItems({ email, avatarUrl }: { email: string; avatarUrl?: string | un
         })}
       </nav>
 
-      {/* Bottom: plan badge + compact user menu */}
+      {/* Bottom: plan badge + compact user menu + sign out */}
       <div className="shrink-0 space-y-2 border-t border-border-subtle px-3 py-4">
         <div className="flex items-center gap-2 rounded-md bg-bg-surface-high px-3 py-2">
           <Zap className="h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
@@ -127,6 +136,19 @@ function NavItems({ email, avatarUrl }: { email: string; avatarUrl?: string | un
         <div className="px-1">
           <UserMenu email={email} avatarUrl={avatarUrl} compact />
         </div>
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className={cn(
+            'flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-medium',
+            'text-text-secondary transition-colors',
+            'hover:bg-danger/10 hover:text-danger',
+            'outline-none focus-visible:ring-2 focus-visible:ring-danger',
+          )}
+        >
+          <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>Cerrar sesión</span>
+        </button>
       </div>
     </div>
   );
