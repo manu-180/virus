@@ -1,9 +1,11 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { PassThrough } from 'stream';
 import archiver from 'archiver';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 // ---------------------------------------------------------------------------
 // README template bundled in every export ZIP
@@ -142,10 +144,26 @@ export async function GET(
     const date = new Date().toISOString().slice(0, 10);
     const zipFilename = `carousel-${slug}-${date}.zip`;
 
-    // Build the ZIP via archiver → PassThrough → ReadableStream
+    // Build the ZIP fully in memory. 8 PNGs at ~1MB each + small text files
+    // fits comfortably in memory and avoids fragile streaming across the
+    // Next.js/Node-stream boundary on Railway (where the previous
+    // PassThrough → ReadableStream pattern would silently fail without
+    // surfacing the archiver error to the client).
     const archive = archiver('zip', { zlib: { level: 6 } });
-    const pass = new PassThrough();
-    archive.pipe(pass);
+    const chunks: Buffer[] = [];
+
+    const archiveDone = new Promise<void>((resolve, reject) => {
+      archive.on('data', (chunk: Buffer) => chunks.push(chunk));
+      archive.on('end', () => resolve());
+      archive.on('warning', (err: archiver.ArchiverError) => {
+        if (err.code === 'ENOENT') {
+          console.warn('[export] archive warning:', err);
+        } else {
+          reject(err);
+        }
+      });
+      archive.on('error', reject);
+    });
 
     const warnings: string[] = [];
     const admin = createAdminClient();
@@ -201,27 +219,39 @@ export async function GET(
     // README.txt
     archive.append(README_TEMPLATE, { name: 'README.txt' });
 
-    // Finalize the archive (signals no more files)
-    archive.finalize();
+    // Finalize and wait for the archive 'end' event so we know all chunks
+    // have been collected before building the response buffer.
+    await archive.finalize();
+    await archiveDone;
 
-    // Bridge Node PassThrough → Web ReadableStream
-    const readableStream = new ReadableStream({
-      start(controller) {
-        pass.on('data', (chunk: Buffer) => controller.enqueue(chunk));
-        pass.on('end', () => controller.close());
-        pass.on('error', (err: Error) => controller.error(err));
-      },
-    });
+    if (warnings.length > 0) {
+      console.warn('[export] completed with warnings:', warnings);
+    }
 
-    return new Response(readableStream, {
+    const buffer = Buffer.concat(chunks);
+
+    if (buffer.length === 0) {
+      console.error('[export] empty ZIP buffer', { carouselId: id, warnings });
+      return NextResponse.json(
+        { error: 'empty_archive', warnings },
+        { status: 500 },
+      );
+    }
+
+    return new Response(buffer, {
       headers: {
         'Content-Type': 'application/zip',
         'Content-Disposition': `attachment; filename="${zipFilename}"`,
+        'Content-Length': String(buffer.length),
         'Cache-Control': 'no-store',
       },
     });
   } catch (err) {
     console.error('[GET /api/carousels/[id]/export]', err);
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    const message = err instanceof Error ? err.message : 'unknown';
+    return NextResponse.json(
+      { error: 'internal_error', message },
+      { status: 500 },
+    );
   }
 }
