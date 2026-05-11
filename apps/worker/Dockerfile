@@ -64,14 +64,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy node_modules from the deps stage (pnpm symlinks preserved).
+# Bring everything pnpm produced over from the deps stage — this preserves the
+# entire pnpm symlink graph (root node_modules + per-workspace node_modules that
+# symlink to it). Without the per-workspace node_modules, Node can't resolve
+# `tsx`, `@virus/shared`, etc. when running from apps/worker.
 COPY --from=deps --chown=node:node /repo/node_modules ./node_modules
 COPY --from=deps --chown=node:node /repo/package.json ./package.json
 COPY --from=deps --chown=node:node /repo/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY --from=deps --chown=node:node /repo/tsconfig.base.json ./tsconfig.base.json
+COPY --from=deps --chown=node:node /repo/apps/worker/node_modules ./apps/worker/node_modules
+COPY --from=deps --chown=node:node /repo/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps --chown=node:node /repo/packages/db/node_modules ./packages/db/node_modules
 
-# Worker source + every workspace it depends on (their "main" points at
-# ./src/*.ts, so we run them through tsx at runtime — no compile step).
+# Workspace source code overlaid on top of the node_modules trees (the source
+# isn't in the deps stage; it comes from the build context).
 COPY --chown=node:node apps/worker/ ./apps/worker/
 COPY --chown=node:node packages/shared/ ./packages/shared/
 COPY --chown=node:node packages/db/ ./packages/db/
