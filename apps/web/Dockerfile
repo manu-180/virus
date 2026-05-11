@@ -48,6 +48,22 @@ COPY packages/shared/ packages/shared/
 COPY packages/db/ packages/db/
 COPY packages/inngest/ packages/inngest/
 
+# Next.js inlines NEXT_PUBLIC_* into the client bundle at build time, so they
+# must be present as ENV during `next build` — not just at runtime. Railway
+# forwards matching service variables as --build-arg when ARGs are declared.
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ARG NEXT_PUBLIC_POSTHOG_KEY
+ARG NEXT_PUBLIC_POSTHOG_HOST
+ARG NEXT_PUBLIC_SENTRY_DSN
+ARG NEXT_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
+    NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY \
+    NEXT_PUBLIC_POSTHOG_HOST=$NEXT_PUBLIC_POSTHOG_HOST \
+    NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN \
+    NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+
 # next.config.ts has `output: 'standalone'` so this emits
 # apps/web/.next/standalone/{server.js, node_modules, apps/web/server.js}
 # plus apps/web/.next/static and apps/web/public for static assets.
