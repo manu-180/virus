@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -12,7 +12,6 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -22,10 +21,11 @@ import {
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Card, CardContent } from '@/components/ui/card';
-import { carousel } from '@virus/shared';
+import { estimateCarouselCost } from '@virus/shared/carousel/cost';
 import type { ProjectListItem } from '@/server/projects/types';
-
-const { estimateCarouselCost } = carousel;
+import type { CarouselTopicItem, ProjectTopicsResponse } from '@/server/topics/types';
+import { TopicCombobox } from './TopicCombobox';
+import { UsageBadge } from './UsageBadge';
 
 // ---------------------------------------------------------------------------
 // Form schema — flattened from shared validators to avoid drift
@@ -81,6 +81,16 @@ export function NewCarouselForm({ projects }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
+  // Topic seleccionado del combobox (vive aparte del form). Se manda como
+  // `selectedTopicId` al POST. El server lo usa para linkear variantes
+  // editadas con su seed original (parent_topic_id). Se resetea al cambiar
+  // de proyecto porque los topics son por proyecto.
+  const [selectedTopic, setSelectedTopic] = useState<CarouselTopicItem | null>(null);
+
+  // Mapa de uso (angle/tone) por proyecto activo — alimenta los UsageBadge
+  // de los selects.
+  const [usage, setUsage] = useState<ProjectTopicsResponse['usage']>({ angle: {}, tone: {} });
+
   const {
     register,
     handleSubmit,
@@ -111,6 +121,9 @@ export function NewCarouselForm({ projects }: Props) {
   // Pre-fill audience + CTA from project brand when project changes
   useEffect(() => {
     if (!watchedProjectId) return;
+
+    // Reset selected topic — los topics son por proyecto.
+    setSelectedTopic(null);
 
     const controller = new AbortController();
 
@@ -146,6 +159,10 @@ export function NewCarouselForm({ projects }: Props) {
           body: JSON.stringify({
             projectId: data.projectId,
             stylePreset: data.stylePreset,
+            // Hint para el server: si el title todavía coincide con el
+            // topic seleccionado → bump al original. Si difiere → crea
+            // variante con parent_topic_id apuntando a este id.
+            selectedTopicId: selectedTopic?.id ?? null,
             brief: {
               topic: data.topic,
               angle: data.angle,
@@ -192,7 +209,11 @@ export function NewCarouselForm({ projects }: Props) {
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger id="projectId" className="w-full">
-                    <SelectValue placeholder="Elegí un proyecto" />
+                    <SelectValue placeholder="Elegí un proyecto">
+                      {(value) =>
+                        projects.find((p) => p.id === value)?.name ?? 'Elegí un proyecto'
+                      }
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {projects.map((p) => (
@@ -209,18 +230,23 @@ export function NewCarouselForm({ projects }: Props) {
             )}
           </div>
 
-          {/* Topic */}
+          {/* Topic — combobox con banco curado por proyecto */}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="topic">Tema del carrusel</Label>
-            <Textarea
-              id="topic"
-              rows={3}
-              placeholder="Ej: 5 errores que hacen que tu sitio web no venda"
-              {...register('topic')}
+            <Controller
+              name="topic"
+              control={control}
+              render={({ field }) => (
+                <TopicCombobox
+                  projectId={watchedProjectId}
+                  value={field.value}
+                  onChange={field.onChange}
+                  onSelectTopic={setSelectedTopic}
+                  onUsageLoaded={setUsage}
+                  errorMessage={errors.topic?.message}
+                />
+              )}
             />
-            {errors.topic && (
-              <p className="text-xs text-destructive">{errors.topic.message}</p>
-            )}
           </div>
 
           {/* Angle + Tone (side by side on wider screens) */}
@@ -234,12 +260,17 @@ export function NewCarouselForm({ projects }: Props) {
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
                     <SelectTrigger id="angle" className="w-full">
-                      <SelectValue placeholder="Elegí un ángulo" />
+                      <SelectValue placeholder="Elegí un ángulo">
+                        {(value) => ANGLES.find((a) => a.value === value)?.label ?? 'Elegí un ángulo'}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {ANGLES.map((a) => (
                         <SelectItem key={a.value} value={a.value}>
-                          {a.label}
+                          <span className="flex items-center gap-2 w-full">
+                            <span className="flex-1">{a.label}</span>
+                            <UsageBadge count={usage.angle[a.value]} />
+                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -260,12 +291,17 @@ export function NewCarouselForm({ projects }: Props) {
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
                     <SelectTrigger id="tone" className="w-full">
-                      <SelectValue placeholder="Elegí un tono" />
+                      <SelectValue placeholder="Elegí un tono">
+                        {(value) => TONES.find((t) => t.value === value)?.label ?? 'Elegí un tono'}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {TONES.map((t) => (
                         <SelectItem key={t.value} value={t.value}>
-                          {t.label}
+                          <span className="flex items-center gap-2 w-full">
+                            <span className="flex-1">{t.label}</span>
+                            <UsageBadge count={usage.tone[t.value]} />
+                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -306,7 +342,10 @@ export function NewCarouselForm({ projects }: Props) {
                   max={10}
                   step={1}
                   value={[field.value]}
-                  onValueChange={(vals) => field.onChange(vals[0])}
+                  onValueChange={(value) => {
+                    const v = Array.isArray(value) ? value[0] : value;
+                    field.onChange(v);
+                  }}
                   aria-label="Cantidad de slides"
                 />
               )}
@@ -375,7 +414,9 @@ export function NewCarouselForm({ projects }: Props) {
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
                     <SelectTrigger id="language" className="w-full">
-                      <SelectValue placeholder="Elegí un idioma" />
+                      <SelectValue placeholder="Elegí un idioma">
+                        {(value) => (value === 'en' ? 'English' : value === 'es' ? 'Español' : 'Elegí un idioma')}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="es">Español</SelectItem>

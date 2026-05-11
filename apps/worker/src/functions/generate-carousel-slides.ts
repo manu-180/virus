@@ -54,13 +54,47 @@ interface ProjectBrandRow {
   ctas: unknown;
   do_not_say: unknown;
   audience: unknown;
+  visual_style: unknown;
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Robust error → string. Plain `String(err)` on a non-Error object yields
+// "[object Object]" which is useless for diagnosis. Walk common shapes
+// (Error, { message }, Gemini API errors with { status, statusText, error }) and
+// fall back to JSON.stringify so the persisted error is always actionable.
+function serializeError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err == null) return 'unknown_error';
+  if (typeof err === 'string') return err;
+  if (typeof err === 'object') {
+    const obj = err as Record<string, unknown>;
+    if (typeof obj.message === 'string') return obj.message;
+    if (typeof obj.error === 'string') return obj.error;
+    if (obj.error && typeof obj.error === 'object') {
+      const innerMsg = (obj.error as Record<string, unknown>).message;
+      if (typeof innerMsg === 'string') return innerMsg;
+    }
+    if (typeof obj.statusText === 'string') {
+      return `${obj.status ?? '?'} ${obj.statusText}`;
+    }
+    try {
+      return JSON.stringify(err).slice(0, 500);
+    } catch {
+      return 'unserializable_error';
+    }
+  }
+  return String(err);
+}
+
 function buildBrand(projectId: string, row: ProjectBrandRow): ProjectBrand {
+  const visualStyle =
+    row.visual_style && typeof row.visual_style === 'object'
+      ? (row.visual_style as ProjectBrand['visualStyle'])
+      : undefined;
+
   return {
     projectId,
     brandName: (row.brand_name as string) ?? '',
@@ -73,6 +107,7 @@ function buildBrand(projectId: string, row: ProjectBrandRow): ProjectBrand {
     features: [],
     caseStudies: [],
     parsedAt: new Date().toISOString(),
+    ...(visualStyle ? { visualStyle } : {}),
   };
 }
 
@@ -172,7 +207,7 @@ export const generateCarouselSlides = inngest.createFunction(
 
       const { data: brandRow, error: brandErr } = await db
         .from('project_brand')
-        .select('brand_name, one_liner, voice_tone, ctas, do_not_say, audience')
+        .select('brand_name, one_liner, voice_tone, ctas, do_not_say, audience, visual_style')
         .eq('project_id', row.project_id)
         .eq('is_current', true)
         .single();
@@ -279,7 +314,7 @@ export const generateCarouselSlides = inngest.createFunction(
               .from('carousel_slides')
               .update({
                 status: 'failed',
-                error: error instanceof Error ? error.message : String(error),
+                error: serializeError(error),
               })
               .eq('carousel_id', carouselId)
               .eq('idx', idx),

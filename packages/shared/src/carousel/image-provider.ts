@@ -19,6 +19,31 @@ export class CarouselRateLimitError extends Error {
   }
 }
 
+// Retry parameters for Gemini rate-limit / quota errors. Inngest's outer retry
+// machinery doesn't kick in here because the batch layer swallows per-slide
+// errors (it intentionally allows partial-success carousels), so the retry has
+// to live in this provider. Backoff: 2s, 6s, 18s (total ≤ 26s).
+export const RATE_LIMIT_MAX_RETRIES = 3;
+export const RATE_LIMIT_INITIAL_BACKOFF_MS = 2_000;
+export const RATE_LIMIT_BACKOFF_FACTOR = 3;
+
+// Hookable sleep so tests can stub the timing without waiting in real time.
+export const _internal = {
+  sleep: (ms: number): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
+function isRateLimitMessage(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    message.includes('429') ||
+    lower.includes('quota') ||
+    lower.includes('rate limit') ||
+    lower.includes('rate_limit') ||
+    lower.includes('resource_exhausted')
+  );
+}
+
 export interface GenerateCarouselSlideImageArgs {
   brief: CarouselBrief;
   slide: SlideSpec;
@@ -50,29 +75,7 @@ export async function generateCarouselSlideImage(
 
   const prompt = buildVisualPrompt(slide, brief.stylePreset, brand);
 
-  let imageBytes: Buffer;
-  try {
-    const result = await generateImageGemini({
-      prompt,
-      themeColor: '#000000',
-      aspectRatio: '4:5',
-    });
-    imageBytes = result.bytes;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.startsWith('gemini_no_image:')) {
-      throw new CarouselSafetyBlockedError(message);
-    }
-    if (
-      message.includes('429') ||
-      message.toLowerCase().includes('quota') ||
-      message.toLowerCase().includes('rate limit') ||
-      message.toLowerCase().includes('rate_limit')
-    ) {
-      throw new CarouselRateLimitError(message);
-    }
-    throw err;
-  }
+  const imageBytes = await generateWithRetry(prompt);
 
   const path = `${userId}/${carouselId}/slide-${slide.idx}.png`;
 
@@ -85,4 +88,42 @@ export async function generateCarouselSlideImage(
   const costCents = Math.round(GEMINI_BATCH_USD_PER_IMAGE * 10_000) / 100;
 
   return { path, bytes: imageBytes.length, costCents };
+}
+
+// Wraps generateImageGemini with retry-on-rate-limit and translation of
+// terminal errors into CarouselSafetyBlockedError / CarouselRateLimitError.
+async function generateWithRetry(prompt: string): Promise<Buffer> {
+  let lastRateLimitMessage = '';
+
+  for (let attempt = 0; attempt <= RATE_LIMIT_MAX_RETRIES; attempt++) {
+    try {
+      const result = await generateImageGemini({
+        prompt,
+        themeColor: '#000000',
+        aspectRatio: '4:5',
+      });
+      return result.bytes;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+
+      if (message.startsWith('gemini_no_image:')) {
+        // Safety / RAI refusal: never retry — prompt needs editing.
+        throw new CarouselSafetyBlockedError(message);
+      }
+
+      if (!isRateLimitMessage(message)) {
+        throw err;
+      }
+
+      lastRateLimitMessage = message;
+
+      if (attempt === RATE_LIMIT_MAX_RETRIES) break;
+
+      const delayMs =
+        RATE_LIMIT_INITIAL_BACKOFF_MS * Math.pow(RATE_LIMIT_BACKOFF_FACTOR, attempt);
+      await _internal.sleep(delayMs);
+    }
+  }
+
+  throw new CarouselRateLimitError(lastRateLimitMessage || 'rate_limit_exhausted');
 }

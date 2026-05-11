@@ -137,9 +137,9 @@ export function Sidebar({ mobileOpen, onMobileClose, email, avatarUrl }: Sidebar
     <>
       {/* Desktop sidebar */}
       <motion.aside
-        initial={{ x: -240, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        transition={{ duration: 0.3, ease: [0.0, 0.0, 0.2, 1] }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.2 }}
         className={cn(
           'hidden md:flex h-full w-60 shrink-0 flex-col',
           'border-r border-border-subtle bg-bg-elevated',

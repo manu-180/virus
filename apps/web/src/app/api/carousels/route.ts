@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { inngest } from '@/lib/inngest';
 import { CreateCarouselSchema } from '@/lib/validators/carousels';
+import { bumpTopicUsage } from '@/server/topics/queries';
 
 async function requireUser() {
   const supabase = await createClient();
@@ -59,6 +60,21 @@ export async function POST(req: NextRequest) {
     if (insertError || !carousel) {
       console.error('[POST /api/carousels] insert error:', insertError);
       return NextResponse.json({ error: 'internal_error' }, { status: 500 });
+    }
+
+    // Bump contador de topic + dimension_usage. NO crítico — si falla,
+    // logueamos y seguimos. El carrusel ya está creado; los contadores
+    // son metadata para mejorar UX, no para gating.
+    try {
+      await bumpTopicUsage({
+        carouselId: carousel.id,
+        rawTitle: input.brief.topic,
+        angle: input.brief.angle,
+        tone: input.brief.tone,
+        selectedTopicId: input.selectedTopicId ?? null,
+      });
+    } catch (bumpErr) {
+      console.error('[POST /api/carousels] bumpTopicUsage failed:', bumpErr);
     }
 
     try {

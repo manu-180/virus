@@ -77,6 +77,30 @@ export function getLayoutForRole(
 // The 3 curated presets
 // ---------------------------------------------------------------------------
 
+/**
+ * Merges brand-level visual identity into a base preset.
+ * Only fields explicitly set in visualStyle override the preset — everything else
+ * falls back to the preset's defaults, so partial configs work correctly.
+ */
+export function applyBrandOverrides(
+  preset: StylePreset,
+  visualStyle: {
+    textColor?: string;
+    bodyColor?: string;
+    accentColor?: string;
+    backgroundColor?: string;
+  } | undefined,
+): StylePreset {
+  if (!visualStyle) return preset;
+  return {
+    ...preset,
+    ...(visualStyle.textColor ? { textColor: visualStyle.textColor } : {}),
+    ...(visualStyle.bodyColor ? { bodyColor: visualStyle.bodyColor } : {}),
+    ...(visualStyle.accentColor ? { accentColor: visualStyle.accentColor } : {}),
+    ...(visualStyle.backgroundColor ? { overlayColor: visualStyle.backgroundColor } : {}),
+  };
+}
+
 export const STYLE_PRESETS: Record<'minimal' | 'bold' | 'editorial', StylePreset> = {
   /**
    * minimal — cream gradient, generous negative space, clean sans-serif.

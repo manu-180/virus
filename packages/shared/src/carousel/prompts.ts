@@ -191,5 +191,24 @@ export function buildVisualPrompt(
     ? `Scene context: ${topic.trim()}. `
     : '';
 
-  return `${anchor}${slideSpec.visualPrompt}. Visual style: ${mood}. Brand: ${brand.brandName}. Maintain visual consistency across the carousel — same color palette, lighting direction, and mood. Aspect ratio 4:5 (1080x1350px). Negative: no text, no letters, no words, no logos, no watermarks, no close-up human faces unless explicitly described, no clutter.`;
+  // Pull rich visual identity from project_brand.visual_style if present.
+  // The prompt-builder threads accentColor / background / vibe through so each
+  // brand's carousels stay visually consistent across the whole series.
+  const vs = brand.visualStyle ?? {};
+  const brandHints: string[] = [];
+  if (vs.accentColor) {
+    brandHints.push(`primary brand accent color ${vs.accentColor}`);
+  }
+  if (vs.secondaryAccent) {
+    brandHints.push(`secondary accent ${vs.secondaryAccent}`);
+  }
+  if (vs.backgroundColor) {
+    brandHints.push(`background tone ${vs.backgroundColor}`);
+  }
+  if (vs.vibe) {
+    brandHints.push(`brand vibe: ${vs.vibe}`);
+  }
+  const brandSection = brandHints.length > 0 ? `. Brand palette: ${brandHints.join(', ')}` : '';
+
+  return `${anchor}${slideSpec.visualPrompt}. Visual style: ${mood}. Brand: ${brand.brandName}${brandSection}. Maintain visual consistency across the carousel — same color palette, lighting direction, and mood. Aspect ratio 4:5 (1080x1350px). Negative: no text, no letters, no words, no logos, no watermarks, no close-up human faces unless explicitly described, no clutter.`;
 }

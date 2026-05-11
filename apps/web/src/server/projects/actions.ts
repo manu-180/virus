@@ -76,10 +76,65 @@ export async function createProject(
       return { ok: false, error: { code: 'DB_ERROR', message: error.message } };
     }
 
+    // Seed minimal project_brand so the carousel pipeline (which requires a
+    // project_brand row with is_current=true) works out of the box. Without
+    // this, the worker fails with CAROUSEL_NO_BRAND for any manually-created
+    // project. The brand row is intentionally minimal — the pipeline applies
+    // its own defaults for missing fields.
+    await seedDefaultProjectBrand(admin, data.id, parsed.data.name);
+
     return { ok: true, data: data as Project };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return { ok: false, error: { code: 'UNKNOWN', message } };
+  }
+}
+
+// Seeds a minimal project_brand row (and the required project_files parent
+// row) so the carousel pipeline works for newly-created projects. Errors are
+// logged but don't block project creation — better to have a project without
+// brand (worker errors clearly) than to fail the whole creation flow.
+async function seedDefaultProjectBrand(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  projectName: string,
+): Promise<void> {
+  const { data: brandFile, error: brandFileError } = await admin
+    .from('project_files')
+    .insert({
+      project_id: projectId,
+      kind: 'project_info',
+      version: 1,
+      storage_path: `seed:auto/${projectId}/brand.json`,
+      mime_type: 'application/json',
+      parse_status: 'ok',
+    })
+    .select()
+    .single();
+
+  if (brandFileError || !brandFile) {
+    console.warn('[seedDefaultProjectBrand] project_files insert failed:', brandFileError?.message);
+    return;
+  }
+
+  const { error: brandError } = await admin.from('project_brand').insert({
+    project_id: projectId,
+    source_file_id: brandFile.id,
+    brand_name: projectName,
+    one_liner: '',
+    audience: { who: '', where: '', pains: [] } as unknown as Json,
+    value_props: [] as unknown as Json,
+    features: [] as unknown as Json,
+    case_studies: [] as unknown as Json,
+    voice_tone: 'directo y claro',
+    ctas: [] as unknown as Json,
+    do_not_say: [] as unknown as Json,
+    raw: {} as unknown as Json,
+    is_current: true,
+  });
+
+  if (brandError) {
+    console.warn('[seedDefaultProjectBrand] project_brand insert failed:', brandError.message);
   }
 }
 

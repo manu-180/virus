@@ -112,6 +112,27 @@ export interface ProjectBrand {
   ctas: { kind: string; value: string }[];
   doNotSay: string[];
   parsedAt: string;
+  /**
+   * Optional rich visual identity used by the carousel image prompt builder.
+   * Populated from `project_brand.visual_style` JSONB. All fields optional —
+   * missing values fall back to preset defaults.
+   */
+  visualStyle?: {
+    defaultPreset?: 'minimal' | 'bold' | 'editorial';
+    /** Headline/title text color — overrides preset.textColor in the overlay */
+    textColor?: string;
+    /** Body paragraph text color — overrides preset.bodyColor in the overlay */
+    bodyColor?: string;
+    /** Accent elements color (arrows, numbers, CTA badge) — overrides preset.accentColor */
+    accentColor?: string;
+    secondaryAccent?: string;
+    /** Overlay background color — overrides preset.overlayColor */
+    backgroundColor?: string;
+    surfaceColor?: string;
+    fontPreference?: string;
+    vibe?: string;
+    sampleImageUrls?: string[];
+  };
 }
 
 // ----------- VIDEO STRUCTURE -----------

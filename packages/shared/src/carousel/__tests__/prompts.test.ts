@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCaptionPrompt, buildCaptionSystemPrompt } from '../prompts.js';
+import { buildCaptionPrompt, buildCaptionSystemPrompt, buildVisualPrompt } from '../prompts.js';
 import type { CarouselBrief, SlideSpec } from '../types.js';
 import type { ProjectBrand } from '../../viral/types.js';
 
@@ -140,3 +140,56 @@ describe('buildCaptionSystemPrompt', () => {
     expect(prompt.toLowerCase()).toContain('markdown');
   });
 });
+
+// ---------------------------------------------------------------------------
+// buildVisualPrompt
+// ---------------------------------------------------------------------------
+
+describe('buildVisualPrompt', () => {
+  const slide = mockSlides[0]!;
+
+  it('falls back to brandName-only when visualStyle is undefined', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', mockBrand);
+    expect(prompt).toContain('APEX');
+    expect(prompt).not.toContain('Brand palette');
+  });
+
+  it('threads accentColor into the prompt when provided', () => {
+    const brandWithStyle: ProjectBrand = {
+      ...mockBrand,
+      visualStyle: { accentColor: '#06b6d4' },
+    };
+    const prompt = buildVisualPrompt(slide, 'bold', brandWithStyle);
+    expect(prompt).toContain('Brand palette');
+    expect(prompt).toContain('#06b6d4');
+  });
+
+  it('threads vibe and secondary accent and background', () => {
+    const brandWithStyle: ProjectBrand = {
+      ...mockBrand,
+      visualStyle: {
+        accentColor: '#06b6d4',
+        secondaryAccent: '#7c3aed',
+        backgroundColor: '#050508',
+        vibe: 'tech-premium dark mode',
+      },
+    };
+    const prompt = buildVisualPrompt(slide, 'bold', brandWithStyle);
+    expect(prompt).toContain('#06b6d4');
+    expect(prompt).toContain('#7c3aed');
+    expect(prompt).toContain('#050508');
+    expect(prompt).toContain('tech-premium dark mode');
+  });
+
+  it('always includes aspect ratio 4:5', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', mockBrand);
+    expect(prompt).toContain('4:5');
+    expect(prompt).toContain('1080x1350');
+  });
+
+  it('includes preset-specific mood for bold', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', mockBrand);
+    expect(prompt).toContain('high contrast');
+  });
+});
+

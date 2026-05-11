@@ -14,7 +14,9 @@
     "./captions": "./src/captions/index.ts",
     "./render": "./src/render/index.ts",
     "./visuals": "./src/visuals/index.ts",
-    "./carousel": "./src/carousel/index.ts"
+    "./carousel": "./src/carousel/index.ts",
+    "./carousel/cost": "./src/carousel/cost.ts",
+    "./carousel/types": "./src/carousel/types.ts"
   },
   "scripts": {
     "test": "vitest run",

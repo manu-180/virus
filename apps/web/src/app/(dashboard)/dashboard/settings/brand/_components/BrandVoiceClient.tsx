@@ -51,8 +51,18 @@ const DEFAULT_VALUES: BrandVoice = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function isEmptyBrandVoice(bv: BrandVoice | Record<string, never>): bv is Record<string, never> {
-  return Object.keys(bv).length === 0;
+function resolveInitialValues(bv: unknown): BrandVoice {
+  // bv can be: null, {} (empty), partial object (legacy), or full BrandVoice.
+  // We validate against the schema and fall back to defaults to avoid runtime
+  // crashes when the persisted shape is missing fields like `pillars`.
+  if (bv == null) return DEFAULT_VALUES;
+  const parsed = BrandVoiceSchema.safeParse(bv);
+  if (parsed.success) return parsed.data;
+  // Partial / legacy data: merge over defaults so all required fields exist.
+  if (typeof bv === 'object') {
+    return { ...DEFAULT_VALUES, ...(bv as Partial<BrandVoice>) } as BrandVoice;
+  }
+  return DEFAULT_VALUES;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,9 +168,7 @@ interface Props {
 export default function BrandVoiceClient({ profile }: Props) {
   const router = useRouter();
 
-  const initialValues = isEmptyBrandVoice(profile.brand_voice)
-    ? DEFAULT_VALUES
-    : (profile.brand_voice as BrandVoice);
+  const initialValues = resolveInitialValues(profile.brand_voice);
 
   const {
     handleSubmit,

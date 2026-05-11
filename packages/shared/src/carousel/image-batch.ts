@@ -8,7 +8,11 @@ import {
 import type { CarouselBrief, SlideSpec } from './types.js';
 import type { ProjectBrand } from '../viral/types.js';
 
-const CONCURRENCY = 3;
+// Concurrency is intentionally conservative to stay within Gemini's image
+// generation quota (free tier is ~5 RPM; paid is higher but still bursty).
+// Combined with retry/backoff in image-provider, this keeps full carousels
+// flowing without tripping 429s on most accounts.
+const CONCURRENCY = 2;
 
 export interface SlideSuccess extends SlideImageResult {
   idx: number;

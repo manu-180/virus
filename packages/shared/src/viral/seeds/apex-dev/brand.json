@@ -68,5 +68,14 @@
     "en solo unos clicks",
     "solución mágica"
   ],
-  "parsedAt": "2026-05-04T00:00:00.000Z"
+  "parsedAt": "2026-05-04T00:00:00.000Z",
+  "visualStyle": {
+    "defaultPreset": "bold",
+    "textColor": "#00D4FF",
+    "bodyColor": "#FFFFFF",
+    "accentColor": "#6366F1",
+    "backgroundColor": "#050B18",
+    "secondaryAccent": "#00D4FF",
+    "vibe": "tech-premium dark mode — electric cyan headlines on deep navy"
+  }
 }

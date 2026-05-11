@@ -21,6 +21,8 @@ import {
   generateCarouselSlideImage,
   CarouselSafetyBlockedError,
   CarouselRateLimitError,
+  RATE_LIMIT_MAX_RETRIES,
+  _internal,
 } from '../image-provider.js';
 import { generateAllSlideImages } from '../image-batch.js';
 import type { CarouselBrief, SlideSpec } from '../types.js';
@@ -78,6 +80,8 @@ function makeSupabaseMock(uploadError: unknown = null) {
 describe('generateCarouselSlideImage', () => {
   beforeEach(() => {
     vi.mocked(generateImageGemini).mockReset();
+    // Stub sleep so retry tests run fast (default impl uses real timers).
+    _internal.sleep = vi.fn().mockResolvedValue(undefined);
   });
 
   it('calls generateImageGemini with aspectRatio 4:5 and uploads to correct path', async () => {
@@ -140,7 +144,7 @@ describe('generateCarouselSlideImage', () => {
     ).rejects.toBeInstanceOf(CarouselSafetyBlockedError);
   });
 
-  it('throws CarouselRateLimitError on 429 / quota errors', async () => {
+  it('throws CarouselRateLimitError after exhausting retries on 429 / quota errors', async () => {
     vi.mocked(generateImageGemini).mockRejectedValue(new Error('HTTP 429: quota exceeded'));
 
     const { db } = makeSupabaseMock();
@@ -155,6 +159,59 @@ describe('generateCarouselSlideImage', () => {
         supabase: db,
       }),
     ).rejects.toBeInstanceOf(CarouselRateLimitError);
+
+    // Initial attempt + RATE_LIMIT_MAX_RETRIES retries
+    expect(generateImageGemini).toHaveBeenCalledTimes(RATE_LIMIT_MAX_RETRIES + 1);
+    // Sleep called between retries (one fewer than total attempts)
+    expect(_internal.sleep).toHaveBeenCalledTimes(RATE_LIMIT_MAX_RETRIES);
+  });
+
+  it('succeeds after a transient rate limit and recovery', async () => {
+    vi.mocked(generateImageGemini)
+      .mockRejectedValueOnce(new Error('HTTP 429: quota exceeded'))
+      .mockRejectedValueOnce(new Error('rate_limit'))
+      .mockResolvedValueOnce({
+        bytes: fakeImageBuffer,
+        width: 1080,
+        height: 1350,
+        costUsd: 0.04,
+      });
+
+    const { db } = makeSupabaseMock();
+
+    const result = await generateCarouselSlideImage({
+      brief: mockBrief,
+      slide: mockSlide,
+      brand: mockBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+    });
+
+    expect(result.path).toBe('user-abc/carousel-xyz/slide-3.png');
+    expect(generateImageGemini).toHaveBeenCalledTimes(3); // 2 fails + 1 success
+    expect(_internal.sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats RESOURCE_EXHAUSTED as a rate limit and retries', async () => {
+    vi.mocked(generateImageGemini).mockRejectedValue(
+      new Error('Google AI: RESOURCE_EXHAUSTED — please slow down'),
+    );
+
+    const { db } = makeSupabaseMock();
+
+    await expect(
+      generateCarouselSlideImage({
+        brief: mockBrief,
+        slide: mockSlide,
+        brand: mockBrand,
+        userId: 'user-abc',
+        carouselId: 'carousel-xyz',
+        supabase: db,
+      }),
+    ).rejects.toBeInstanceOf(CarouselRateLimitError);
+
+    expect(generateImageGemini).toHaveBeenCalledTimes(RATE_LIMIT_MAX_RETRIES + 1);
   });
 
   it('re-throws unknown errors as-is', async () => {
@@ -205,6 +262,7 @@ describe('generateCarouselSlideImage', () => {
 describe('generateAllSlideImages', () => {
   beforeEach(() => {
     vi.mocked(generateImageGemini).mockReset();
+    _internal.sleep = vi.fn().mockResolvedValue(undefined);
   });
 
   function makeSlides(count: number): SlideSpec[] {

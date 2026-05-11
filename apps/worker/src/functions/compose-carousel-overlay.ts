@@ -16,7 +16,7 @@
 
 import { inngest } from '../inngest/index.js';
 import { getAdminClient } from '../lib/supabase.js';
-import { composeAllSlides, STYLE_PRESETS } from '@virus/shared/carousel';
+import { composeAllSlides, STYLE_PRESETS, applyBrandOverrides } from '@virus/shared/carousel';
 import type { SlideSpec } from '@virus/shared/carousel';
 import type { StylePreset } from '@virus/shared/carousel';
 
@@ -26,6 +26,14 @@ import type { StylePreset } from '@virus/shared/carousel';
 
 interface CarouselProjectRow {
   style_preset: string;
+  project_id: string;
+}
+
+interface BrandVisualStyle {
+  textColor?: string;
+  bodyColor?: string;
+  accentColor?: string;
+  backgroundColor?: string;
 }
 
 interface CarouselSlideRow {
@@ -51,9 +59,10 @@ function slideRowToSpec(row: CarouselSlideRow): SlideSpec {
   return { idx: row.idx, role: 'insight', headline: '', visualPrompt: row.prompt };
 }
 
-function resolvePreset(presetName: string): StylePreset {
+function resolvePreset(presetName: string, visualStyle?: BrandVisualStyle): StylePreset {
   const key = presetName as keyof typeof STYLE_PRESETS;
-  return STYLE_PRESETS[key] ?? STYLE_PRESETS.bold;
+  const base = STYLE_PRESETS[key] ?? STYLE_PRESETS.bold;
+  return applyBrandOverrides(base, visualStyle);
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +114,7 @@ export const composeCarouselOverlay = inngest.createFunction(
 
       const { data: carouselRow, error: carouselErr } = await db
         .from('carousel_projects')
-        .select('style_preset')
+        .select('style_preset, project_id')
         .eq('id', carouselId)
         .single();
 
@@ -113,7 +122,16 @@ export const composeCarouselOverlay = inngest.createFunction(
         throw new Error(`carousel_not_found:${carouselId} — ${carouselErr?.message ?? 'no data'}`);
       }
 
-      const { style_preset } = carouselRow as CarouselProjectRow;
+      const { style_preset, project_id } = carouselRow as CarouselProjectRow;
+
+      const { data: brandRow } = await db
+        .from('project_brand')
+        .select('visual_style')
+        .eq('project_id', project_id)
+        .eq('is_current', true)
+        .single();
+
+      const visualStyle = (brandRow?.visual_style as BrandVisualStyle | null) ?? undefined;
 
       const { data: slideRows, error: slidesErr } = await db
         .from('carousel_slides')
@@ -138,7 +156,7 @@ export const composeCarouselOverlay = inngest.createFunction(
 
       return {
         slides: rows,
-        preset: resolvePreset(style_preset),
+        preset: resolvePreset(style_preset, visualStyle),
       };
     });
 

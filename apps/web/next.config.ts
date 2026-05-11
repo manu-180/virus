@@ -4,7 +4,16 @@ import { withSentryConfig } from '@sentry/nextjs'
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@virus/shared', '@virus/db', '@virus/inngest'],
-  webpack: (config) => {
+  webpack: (config, { isServer }) => {
+    // `sharp` is server-only (uses child_process via detect-libc).
+    // The carousel barrel re-exports composer.ts which imports sharp, so we
+    // externalize it from the CLIENT bundle to prevent the build error.
+    if (!isServer) {
+      config.externals = [
+        ...(Array.isArray(config.externals) ? config.externals : []),
+        'sharp',
+      ];
+    }
     // Workspace packages use NodeNext-style imports with explicit `.js` —
     // tell webpack to also try `.ts`/`.tsx` when resolving these.
     config.resolve.extensionAlias = {

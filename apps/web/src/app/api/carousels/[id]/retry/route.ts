@@ -87,9 +87,9 @@ export async function POST(
       return NextResponse.json({ error: 'not_found' }, { status: 404 });
     }
 
-    if (project.status !== 'failed') {
+    if (project.status !== 'failed' && project.status !== 'pending') {
       return NextResponse.json(
-        { error: 'only_failed_carousels_can_be_retried' },
+        { error: 'only_failed_or_pending_carousels_can_be_retried' },
         { status: 409 },
       );
     }
@@ -149,7 +149,7 @@ export async function POST(
       .from('carousel_projects')
       .update({ status: plan.targetStatus, error: null })
       .eq('id', id)
-      .eq('status', 'failed')
+      .in('status', ['failed', 'pending'])
       .select('id');
 
     if (updateError) {

@@ -13,7 +13,7 @@
 
 import { inngest } from '../inngest/index.js';
 import { getAdminClient } from '../lib/supabase.js';
-import { generateCarouselSlideImage, composeSlide, STYLE_PRESETS } from '@virus/shared/carousel';
+import { generateCarouselSlideImage, composeSlide, STYLE_PRESETS, applyBrandOverrides } from '@virus/shared/carousel';
 import type { SlideSpec, CarouselBrief, StylePreset } from '@virus/shared/carousel';
 import type { ProjectBrand } from '@virus/shared/viral';
 
@@ -42,6 +42,14 @@ interface ProjectBrandRow {
   ctas: unknown;
   do_not_say: unknown;
   audience: unknown;
+  visual_style: unknown;
+}
+
+interface BrandVisualStyle {
+  textColor?: string;
+  bodyColor?: string;
+  accentColor?: string;
+  backgroundColor?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,9 +97,10 @@ function buildBrand(projectId: string, row: ProjectBrandRow): ProjectBrand {
   };
 }
 
-function resolvePreset(presetName: string): StylePreset {
+function resolvePreset(presetName: string, visualStyle?: BrandVisualStyle): StylePreset {
   const key = presetName as keyof typeof STYLE_PRESETS;
-  return STYLE_PRESETS[key] ?? STYLE_PRESETS.bold;
+  const base = STYLE_PRESETS[key] ?? STYLE_PRESETS.bold;
+  return applyBrandOverrides(base, visualStyle);
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +181,7 @@ export const regenerateCarouselSlide = inngest.createFunction(
 
       const { data: brandRow, error: brandErr } = await db
         .from('project_brand')
-        .select('brand_name, one_liner, voice_tone, ctas, do_not_say, audience')
+        .select('brand_name, one_liner, voice_tone, ctas, do_not_say, audience, visual_style')
         .eq('project_id', row.project_id)
         .eq('is_current', true)
         .single();
@@ -181,10 +190,12 @@ export const regenerateCarouselSlide = inngest.createFunction(
         throw new Error(`brand_not_found:${row.project_id}`);
       }
 
+      const visualStyle = (brandRow.visual_style as BrandVisualStyle | null) ?? undefined;
+
       return {
         brief: parseBrief(row),
         brand: buildBrand(row.project_id, brandRow as ProjectBrandRow),
-        preset: resolvePreset(row.style_preset),
+        preset: resolvePreset(row.style_preset, visualStyle),
         slideSpec: slideRowToSpec(slideRow as CarouselSlideRow),
       };
     });
