@@ -1,13 +1,18 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import archiver from 'archiver';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type ArchiverError = import('archiver').ArchiverError;
+// archiver v8 is pure ESM with named exports (ZipArchive, TarArchive, …) and
+// no default export. We must NOT let webpack bundle it: the externals config
+// would emit require('archiver') which returns a namespace object without a
+// `.default`, breaking both the old default-import pattern and the new class
+// API. The webpackIgnore comment in the dynamic import below tells webpack to
+// leave the import() call untouched so Node.js resolves it natively at runtime.
+type ArchiverError = Error & { code?: string };
 
 // ---------------------------------------------------------------------------
 // README template bundled in every export ZIP
@@ -151,7 +156,12 @@ export async function GET(
     // Next.js/Node-stream boundary on Railway (where the previous
     // PassThrough → ReadableStream pattern would silently fail without
     // surfacing the archiver error to the client).
-    const archive = archiver('zip', { zlib: { level: 6 } });
+    //
+    // archiver v8 is ESM-only with named class exports. Use webpackIgnore so
+    // webpack leaves this import() untouched and Node.js resolves it natively.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { ZipArchive } = await import(/* webpackIgnore: true */ 'archiver') as any;
+    const archive = new ZipArchive({ zlib: { level: 6 } });
     const chunks: Buffer[] = [];
 
     const archiveDone = new Promise<void>((resolve, reject) => {
