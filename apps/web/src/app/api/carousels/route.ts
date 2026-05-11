@@ -50,7 +50,11 @@ export async function POST(req: NextRequest) {
         project_id: input.projectId,
         user_id: user.id,
         status: 'pending',
-        brief: input.brief,
+        // brief column is text — store a serialized JSON string so the worker
+        // can `JSON.parse(row.brief)`. Passing the raw object only "worked"
+        // because PostgREST coerces JSON→text on insert; making this explicit
+        // restores type-safety with the generated supabase types.
+        brief: JSON.stringify(input.brief),
         style_preset: input.stylePreset,
         slide_count: input.brief.slideCount,
       })
@@ -77,11 +81,24 @@ export async function POST(req: NextRequest) {
       console.error('[POST /api/carousels] bumpTopicUsage failed:', bumpErr);
     }
 
+    let dispatchedEventId: string | null = null;
     try {
-      await inngest.send({
+      const sendResult = await inngest.send({
         name: 'virus/carousel.created',
         data: { carouselId: carousel.id, userId: user.id, projectId: input.projectId },
       });
+      // `inngest.send` returns { ids: string[] } in v3. Persist the first id
+      // so we can correlate Inngest Cloud runs with DB rows when debugging.
+      const ids = (sendResult as { ids?: string[] } | undefined)?.ids;
+      dispatchedEventId = ids?.[0] ?? null;
+      console.log(JSON.stringify({
+        route: 'POST /api/carousels',
+        carouselId: carousel.id,
+        userId: user.id,
+        event: 'virus/carousel.created',
+        eventId: dispatchedEventId,
+        ok: true,
+      }));
     } catch (inngestErr) {
       console.error('[POST /api/carousels] inngest.send failed:', inngestErr);
       await admin
@@ -89,6 +106,19 @@ export async function POST(req: NextRequest) {
         .update({ status: 'failed', error: 'Failed to dispatch event' })
         .eq('id', carousel.id);
       return NextResponse.json({ error: 'dispatch_failed' }, { status: 500 });
+    }
+
+    // Non-critical: persist the inngest event id for diagnostics. Don't fail
+    // the request if this update errors.
+    if (dispatchedEventId) {
+      try {
+        await admin
+          .from('carousel_projects')
+          .update({ inngest_run_id: dispatchedEventId })
+          .eq('id', carousel.id);
+      } catch (idErr) {
+        console.error('[POST /api/carousels] failed to persist inngest_run_id:', idErr);
+      }
     }
 
     return NextResponse.json({ carouselId: carousel.id }, { status: 201 });

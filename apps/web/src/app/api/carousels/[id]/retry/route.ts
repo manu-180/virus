@@ -163,8 +163,14 @@ export async function POST(
     // ------------------------------------------------------------------
     // Dispatch the resumption event
     // ------------------------------------------------------------------
+    let dispatchedEventId: string | null = null;
     try {
-      await inngest.send({ name: plan.event, data: plan.data } as Parameters<typeof inngest.send>[0]);
+      const sendResult = await inngest.send({
+        name: plan.event,
+        data: plan.data,
+      } as Parameters<typeof inngest.send>[0]);
+      const ids = (sendResult as { ids?: string[] } | undefined)?.ids;
+      dispatchedEventId = ids?.[0] ?? null;
     } catch (inngestErr) {
       console.error('[POST /api/carousels/[id]/retry] inngest.send failed:', inngestErr);
       await admin
@@ -174,11 +180,25 @@ export async function POST(
       return NextResponse.json({ error: 'dispatch_failed' }, { status: 500 });
     }
 
+    // Persist the new inngest event id (overwrite previous — we care about
+    // the latest attempt for diagnostics).
+    if (dispatchedEventId) {
+      try {
+        await admin
+          .from('carousel_projects')
+          .update({ inngest_run_id: dispatchedEventId })
+          .eq('id', id);
+      } catch (idErr) {
+        console.error('[POST /api/carousels/[id]/retry] failed to persist inngest_run_id:', idErr);
+      }
+    }
+
     console.log(JSON.stringify({
       route: 'POST /api/carousels/[id]/retry',
       carouselId: id,
       lastOkStep,
       dispatchedEvent: plan.event,
+      eventId: dispatchedEventId,
     }));
 
     return NextResponse.json({ ok: true, resumedFrom: lastOkStep });

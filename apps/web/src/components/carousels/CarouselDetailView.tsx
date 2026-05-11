@@ -708,9 +708,13 @@ export function CarouselDetailView({ initialData }: CarouselDetailViewProps) {
             <div className="flex items-start gap-3">
               <TriangleAlert className="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0 space-y-1">
-                <p className="text-sm font-semibold text-yellow-300">En cola</p>
+                <p className="text-sm font-semibold text-yellow-300">
+                  En cola <span className="font-normal text-yellow-400/70">(<RelativeTime iso={project.created_at} />)</span>
+                </p>
                 <p className="text-xs text-yellow-400/70">
-                  Si lleva más de unos segundos, el worker puede no estar activo. Reintentá para re-encolar.
+                  Normalmente el primer slide aparece en 10–30s. Si tarda más,
+                  el worker puede estar offline o desincronizado de Inngest Cloud.
+                  El watchdog lo marca como fallido a los 90s — refrescá o reintentá.
                 </p>
               </div>
             </div>
