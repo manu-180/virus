@@ -56,26 +56,27 @@ ENV NODE_ENV=production \
 # ffmpeg = audio post-processing in @virus/shared.
 # tini   = correct PID 1 / SIGTERM forwarding for graceful shutdown.
 # ca-certificates = HTTPS calls to Supabase / Anthropic / etc.
+# node:22-bookworm-slim already ships a non-root `node` user (uid 1000).
+# We reuse it instead of useradd'ing a duplicate.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates ffmpeg tini \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd -m -u 1000 -s /bin/bash app
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Copy node_modules from the deps stage (pnpm symlinks preserved).
-COPY --from=deps --chown=app:app /repo/node_modules ./node_modules
-COPY --from=deps --chown=app:app /repo/package.json ./package.json
-COPY --from=deps --chown=app:app /repo/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=deps --chown=app:app /repo/tsconfig.base.json ./tsconfig.base.json
+COPY --from=deps --chown=node:node /repo/node_modules ./node_modules
+COPY --from=deps --chown=node:node /repo/package.json ./package.json
+COPY --from=deps --chown=node:node /repo/pnpm-workspace.yaml ./pnpm-workspace.yaml
+COPY --from=deps --chown=node:node /repo/tsconfig.base.json ./tsconfig.base.json
 
 # Worker source + every workspace it depends on (their "main" points at
 # ./src/*.ts, so we run them through tsx at runtime — no compile step).
-COPY --chown=app:app apps/worker/ ./apps/worker/
-COPY --chown=app:app packages/shared/ ./packages/shared/
-COPY --chown=app:app packages/db/ ./packages/db/
+COPY --chown=node:node apps/worker/ ./apps/worker/
+COPY --chown=node:node packages/shared/ ./packages/shared/
+COPY --chown=node:node packages/db/ ./packages/db/
 
-USER app
+USER node
 
 # Railway injects $PORT at runtime; our server reads it (falls back to 3001).
 EXPOSE 3001
