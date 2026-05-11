@@ -25,6 +25,7 @@ import {
 } from './functions/orchestrator.js';
 import { detectTrends } from './functions/detect-trends.js';
 import { generateVideoProjectAware } from './functions/generate-video-project-aware.js';
+import { sweepStuckCarousels } from './functions/sweep-stuck-carousels.js';
 
 export {
   parseProjectFile,
@@ -44,6 +45,7 @@ export {
   composeCarouselOverlay,
   regenerateCarouselSlide,
   handleCarouselFailure,
+  sweepStuckCarousels,
 };
 
 export const functions = [
@@ -64,4 +66,5 @@ export const functions = [
   composeCarouselOverlay,
   regenerateCarouselSlide,
   handleCarouselFailure,
+  sweepStuckCarousels,
 ] as const;

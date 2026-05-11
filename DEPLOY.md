@@ -206,6 +206,53 @@ Vercel free + Inngest free + Supabase free).
 
 ---
 
+## 6.5 Operations: stuck carousels & diagnostics
+
+The carousel pipeline has three layers of defense against stuck rows
+(see `apps/web/src/server/carousel/watchdog.ts` for thresholds):
+
+| Layer | Where | When it fires | Catches |
+| --- | --- | --- | --- |
+| Detail watchdog | Web `GET /api/carousels/[id]` | When the user opens a stuck carousel | Single-row clean-up while user is browsing |
+| List sweep | Web `GET /api/carousels` | Every visit to the carousels list | Stuck rows the user never reopens |
+| Cron sweep | Web `GET /api/cron/sweep-stuck-carousels` | External scheduler (cron-job.org, Railway cron, GitHub Actions) | Background coverage when nobody is browsing |
+| Inngest sweep | Worker scheduled function `sweep-stuck-carousels` | Every 2 min, **only if the worker is up** | Defense-in-depth |
+
+### Set up the cron sweep (recommended)
+
+1. Pick a random secret and set it on the web's Railway service:
+   ```
+   CRON_SECRET=<a random 40+ char string>
+   ```
+2. Schedule any external service to hit the endpoint every 2–5 minutes:
+   ```bash
+   curl -H "Authorization: Bearer $CRON_SECRET" \
+     https://<your-web-domain>/api/cron/sweep-stuck-carousels
+   ```
+   Returns `{ ok, inspected, failed, failedIds }`.
+
+### Diagnostic endpoint
+
+Set `DIAG_TOKEN` on the web and call:
+
+```bash
+curl "https://<your-web-domain>/api/diag/inngest?token=$DIAG_TOKEN"
+```
+
+The response tells you:
+
+- Whether the web sees `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY`.
+- Count of carousels currently in each non-terminal status with their age.
+- If `INNGEST_WORKER_URL` is configured, a `/health` probe of the worker
+  (so you can confirm the worker is reachable from the web).
+- The watchdog thresholds in use.
+
+If `workerProbe.ok === false` and the queue shows growing pending rows, the
+worker is down or unreachable — check Railway → worker service → logs and
+verify Inngest Cloud → Apps still has the worker synced.
+
+---
+
 ## 7. Maintenance
 
 - **Updating the worker**: push to `main` → Railway auto-builds & redeploys.

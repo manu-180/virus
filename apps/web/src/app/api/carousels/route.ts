@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { inngest } from '@/lib/inngest';
 import { CreateCarouselSchema } from '@/lib/validators/carousels';
 import { bumpTopicUsage } from '@/server/topics/queries';
+import { sweepStuckCarousels } from '@/server/carousel/watchdog';
 
 async function requireUser() {
   const supabase = await createClient();
@@ -132,6 +133,24 @@ export async function GET() {
   try {
     const user = await requireUser();
     if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+
+    // Sweep stuck rows before returning the list. This catches carousels that
+    // the user never reopened individually (which would otherwise stay pending
+    // indefinitely when the worker is down). Errors here are non-fatal — we
+    // still return the list even if the sweep failed.
+    try {
+      const sweep = await sweepStuckCarousels(50);
+      if (sweep.failed.length > 0) {
+        console.log(JSON.stringify({
+          route: 'GET /api/carousels',
+          watchdogSweep: true,
+          inspected: sweep.inspected,
+          failed: sweep.failed.length,
+        }));
+      }
+    } catch (sweepErr) {
+      console.error('[GET /api/carousels] watchdog sweep failed:', sweepErr);
+    }
 
     const supabase = await createClient();
     const { data: rows, error } = await supabase
