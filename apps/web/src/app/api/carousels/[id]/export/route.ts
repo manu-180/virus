@@ -1,20 +1,12 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { createRequire } from 'node:module';
+import archiver from 'archiver';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// archiver is a CJS module that exports a function directly
-// (`module.exports = function archiver(...)`). With Next.js + webpack
-// externals, `import archiver from 'archiver'` gets compiled to
-// `(0, g.default)()` which throws "is not a function" because the bare
-// require result is the function — there is no `.default` property.
-// createRequire bypasses the bundler entirely and gives us the raw CJS export.
-const nodeRequire = createRequire(import.meta.url);
-const archiver = nodeRequire('archiver') as typeof import('archiver');
 type ArchiverError = import('archiver').ArchiverError;
 
 // ---------------------------------------------------------------------------
