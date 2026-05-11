@@ -41,8 +41,10 @@ COPY packages/remotion/package.json packages/remotion/
 
 # Install only what the worker needs (and transitive workspace packages).
 # --frozen-lockfile guarantees deterministic builds.
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --filter @virus/worker...
+# (No --mount=type=cache: Railway's BuildKit rejects unprefixed cache IDs.
+#  Railway already caches each Dockerfile layer between deploys, so the speed
+#  hit is small.)
+RUN pnpm install --frozen-lockfile --filter @virus/worker...
 
 # ─── Stage 2: runtime — minimal image with ffmpeg + sources ───────────────────
 FROM node:22-bookworm-slim AS runtime
