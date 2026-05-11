@@ -22,6 +22,14 @@ const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
 
+  // sharp loads a native binary via dlopen and uses dynamic requires for its
+  // libvips bindings. If webpack bundles it, those runtime lookups break with
+  // "Could not load the sharp module using the linux-x64 runtime" during
+  // build-time page data collection. Marking it server-external makes Next
+  // require() it from node_modules normally, and the standalone tracer copies
+  // the platform-specific binaries into the runtime image.
+  serverExternalPackages: ['sharp'],
+
   webpack: (config, { isServer }) => {
     // `sharp` is server-only (uses child_process via detect-libc).
     // The carousel barrel re-exports composer.ts which imports sharp, so we
