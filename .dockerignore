@@ -1,0 +1,64 @@
+# Build-context filter for the worker Dockerfile (build context = repo root).
+# Keeps the context small and prevents secrets from ever entering the image.
+#
+# We intentionally do NOT exclude apps/web, apps/ig-publisher, packages/remotion
+# at the directory level because the Dockerfile's deps stage needs their
+# package.json / requirements.txt to compute the workspace topology, and
+# Docker doesn't allow re-including children of an excluded parent.
+# **/node_modules below is the real space saver — that's where the bulk lives.
+
+# ─── Build artifacts & caches ────────────────────────────────────────────────
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/.vite
+**/.parcel-cache
+**/tsconfig.tsbuildinfo
+
+# ─── Local env & secrets ─────────────────────────────────────────────────────
+**/.env
+**/.env.local
+**/.env.*.local
+**/.env.development
+**/.env.production
+
+# ─── Editors & OS ────────────────────────────────────────────────────────────
+**/.vscode
+**/.idea
+**/.DS_Store
+**/Thumbs.db
+
+# ─── Git / CI ────────────────────────────────────────────────────────────────
+.git
+.github
+.gitignore
+.gitattributes
+
+# ─── Tests / fixtures / docs we don't need at runtime ────────────────────────
+**/__tests__
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/playwright-report
+**/test-results
+docs
+
+# ─── Worktrees, plans, scratch ───────────────────────────────────────────────
+.claude
+.worktrees
+.conductor
+.plans
+
+# ─── Heavy app sources not used by the worker ────────────────────────────────
+# These dirs are big but we keep their package.json for workspace resolution.
+# Exclude e2e tests, build outputs, public assets, etc., but allow manifests.
+apps/web/.next
+apps/web/playwright-report
+apps/web/test-results
+apps/web/public
+apps/web/e2e
+apps/ig-publisher/app
+apps/ig-publisher/scripts
+packages/remotion/out

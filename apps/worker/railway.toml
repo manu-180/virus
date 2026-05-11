@@ -1,0 +1,28 @@
+# Railway deployment config for the Inngest worker.
+#
+# When linking the service in Railway, set the "Root Directory" to the
+# repository root (NOT apps/worker) so the Dockerfile can COPY workspace
+# packages. Then set Dockerfile Path to `apps/worker/Dockerfile`.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/worker/Dockerfile"
+
+[deploy]
+# Railway sets $PORT and expects the app to listen on it.
+# server.ts honors $PORT (falls back to WORKER_PORT, then 3001).
+startCommand = "node --import tsx/esm src/server.ts"
+
+# Restart on any non-zero exit so transient crashes don't take the service down.
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# Inngest workers should not be horizontally scaled in dev — Inngest Cloud
+# routes events to a single endpoint and handles concurrency via the
+# per-function `concurrency` setting. Scale by upgrading the instance.
+numReplicas = 1
+
+# /health is a lightweight 200 from server.ts. Railway pings this until it
+# gets a 2xx — if the worker can't boot in 60s the deploy is rolled back.
+healthcheckPath = "/health"
+healthcheckTimeout = 60
