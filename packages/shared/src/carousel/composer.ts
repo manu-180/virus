@@ -395,7 +395,12 @@ function buildTextBlock(
 
 function resolveBody(body: string | undefined, overrides: LayoutOverrides): string | null {
   if (overrides.bodyHidden || body == null) return null;
-  return truncate(body, 180);
+  // Defense in depth: bodies should already be ≤ 120 chars (Zod schema cap)
+  // and a complete sentence (sanitizeSlideBody upstream). If something slips
+  // past that — a regenerate path that didn't sanitize, a hand-edited
+  // overlay_text in DB — we still walk back to a whitespace boundary and
+  // append "…" rather than letting Satori clip the rendered text mid-word.
+  return truncate(body, 130);
 }
 
 function applyCase(text: string, uppercase: boolean): string {

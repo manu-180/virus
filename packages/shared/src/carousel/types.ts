@@ -12,7 +12,12 @@ export const SlideSpecSchema = z.object({
   // status='ready' and the user has no signal that something is wrong.
   // Reject at the validation boundary so the LLM-fix retry path kicks in.
   headline: z.string().min(1).max(60),
-  body: z.string().max(140).optional(),
+  // body is intentionally tight (≤120). Bodies were getting silently chopped
+  // mid-word in the slide PNG because the prompt asked for ≤160, the schema
+  // capped at 140, and the sanitizer hard-sliced at 140 with no ellipsis.
+  // The new contract is: short, complete sentence ending in a final period.
+  // 120 gives the sanitizer a small margin above the 110-char prompt target.
+  body: z.string().max(120).optional(),
   visualPrompt: z.string().min(1),
 });
 

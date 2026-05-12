@@ -24,6 +24,7 @@ import {
   STYLE_PRESETS,
   applyBrandOverrides,
   buildSlidePlanPrompt,
+  sanitizeSlideBody,
   SlideSpecArraySchema,
 } from '@virus/shared/carousel';
 import type { SlideSpec, CarouselBrief, StylePreset } from '@virus/shared/carousel';
@@ -167,7 +168,12 @@ async function replanSingleSlide(
         headline: match.headline,
         visualPrompt: match.visualPrompt || fallback.visualPrompt,
       };
-      if (match.body !== undefined) recovered.body = match.body;
+      // Run the body through the same smart-truncate the plan path uses so
+      // recovered slides never render half-sentences.
+      if (match.body !== undefined) {
+        const cleaned = sanitizeSlideBody(match.body);
+        if (cleaned !== undefined) recovered.body = cleaned;
+      }
       return recovered;
     }
   } catch (err) {

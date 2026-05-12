@@ -3,6 +3,90 @@ import type { BrandImageProfile, ProjectBrand } from '../viral/types.js';
 import type { CarouselBrief, CaptionVariant, SlideSpec } from './types.js';
 
 // ---------------------------------------------------------------------------
+// Slide body sanitization
+//
+// Bodies were getting silently chopped mid-word in slide PNGs because the
+// prompt asked for ≤160 chars, the schema capped at 140, and the sanitizer
+// hard-sliced at 140 with no ellipsis or sentence detection. Result: PNG text
+// like "puede duplicar tu" with no period and no ellipsis.
+//
+// The new contract: SHORT, COMPLETE SENTENCES. This helper enforces that.
+// It is the single source of truth for slide body trimming, used by both the
+// initial plan sanitizer and any future re-plan / regenerate paths.
+//
+// Strategy (in order):
+//  1. If body already ≤ maxLen → return as-is (just trimmed).
+//  2. Try to walk back to the last sentence-ending punctuation (. ! ?) within
+//     budget. If found, keep through that punctuation — closed sentence,
+//     done.
+//  3. Otherwise, walk back to the last whitespace within budget, drop any
+//     trailing connectives/conjunctions ("y", "pero", "porque", "que",
+//     "para", "de", "en", etc.) and trailing punctuation, then append a
+//     period. Closed sentence by force.
+//  4. If walking back yields an empty string (one giant word — extremely
+//     rare), return undefined so the slide renders with no body rather than
+//     a half-word.
+// ---------------------------------------------------------------------------
+
+const TRAILING_CONNECTIVES = new Set([
+  'y', 'e', 'o', 'u', 'pero', 'porque', 'que', 'para', 'por', 'con', 'sin',
+  'de', 'del', 'en', 'a', 'al', 'la', 'el', 'los', 'las', 'un', 'una',
+  'unos', 'unas', 'lo', 'le', 'les', 'su', 'sus', 'mi', 'tu', 'es', 'son',
+  'como', 'si', 'sí', 'ya', 'más', 'menos', 'donde', 'cuando', 'cuanto',
+  'cuál', 'cual', 'mientras', 'aunque', 'entonces', 'también', 'tampoco',
+  'pues', 'así', 'tan', 'muy', 'no',
+]);
+
+export function sanitizeSlideBody(input: string, maxLen = 110): string | undefined {
+  const trimmed = input.trim();
+  if (trimmed.length === 0) return undefined;
+
+  // Already short enough — return as-is. Don't even strip trailing dots; the
+  // prompt asks for a final period and we should honor whatever Claude sent
+  // if it already fits.
+  if (trimmed.length <= maxLen) return trimmed;
+
+  // 1) Try to keep the largest complete sentence (or sequence of sentences)
+  //    that fits within budget. Search for the LAST sentence-ending
+  //    punctuation in the prefix.
+  const prefix = trimmed.slice(0, maxLen);
+  const sentenceEnd = Math.max(
+    prefix.lastIndexOf('.'),
+    prefix.lastIndexOf('!'),
+    prefix.lastIndexOf('?'),
+  );
+  if (sentenceEnd > 0) {
+    return prefix.slice(0, sentenceEnd + 1).trim();
+  }
+
+  // 2) No sentence ends in budget. Walk back to last whitespace, then drop
+  //    trailing connectives so we don't end on "y", "pero", "porque", etc.
+  let cut = prefix.lastIndexOf(' ');
+  if (cut <= 0) {
+    // One giant word — nothing safe to render.
+    return undefined;
+  }
+
+  let candidate = prefix.slice(0, cut).trim();
+
+  // Keep stripping trailing punctuation + connectives until we land on a
+  // content word. Cap the loop so we never spin on pathological input.
+  for (let i = 0; i < 6; i++) {
+    candidate = candidate.replace(/[\s,;:\-–—.!?]+$/u, '');
+    const m = candidate.match(/([\p{L}\p{N}]+)\s*$/u);
+    if (!m) break;
+    const lastWord = m[1]!.toLowerCase();
+    if (!TRAILING_CONNECTIVES.has(lastWord)) break;
+    candidate = candidate.slice(0, candidate.length - m[1]!.length).trimEnd();
+  }
+
+  if (candidate.length === 0) return undefined;
+
+  // Force a final period so the rendered slide reads as a closed thought.
+  return /[.!?]$/.test(candidate) ? candidate : `${candidate}.`;
+}
+
+// ---------------------------------------------------------------------------
 // Slide plan prompt — Claude returns a JSON array of SlideSpec
 //
 // Narrative arc: rather than a flat checklist of roles, we instruct Claude to
@@ -161,7 +245,7 @@ ACTO 3 — Resolución (slides ${lastIdx - 1} y ${lastIdx})
 
 ## Reglas de texto
 - headline: máximo 60 caracteres. Genera curiosidad sin clickbait — entregá lo prometido.
-- body: máximo 160 caracteres. SIEMPRE oraciones completas con punto final. Breve, concisa, certera, profesional. Sin frases colgadas, sin puntos suspensivos finales, sin flechas, sin "pero..." o "y acá viene lo interesante" — eso queda prohibido. Si la idea no entra en 160 caracteres, recortala hasta que entre, no la cortes.
+- body: ESTRICTO máximo 110 caracteres. UNA sola oración completa, breve, certera, terminada en PUNTO FINAL. Mejor 70 caracteres completos que 110 truncados. Si la idea no entra en 110 caracteres en oración completa, simplificala — quitá adjetivos, quitá ejemplos, quedate con la idea pura. Prohibido: frases colgadas, puntos suspensivos al final, flechas, "pero...", "y acá viene lo interesante", oraciones partidas, conectores finales ("y", "pero", "porque", "que") sin completar. Contá los caracteres antes de responder.
 - Sin emojis decorativos. Máximo 1 emoji solo si suma significado real.
 - Hablá en "vos" (español argentino), nunca en "tú".
 - Si la marca tiene palabras prohibidas (arriba), no aparecen en headlines ni bodies.
@@ -185,7 +269,7 @@ Reglas estrictas del JSON:
 - slide ${lastIdx}.role === "cta" SIEMPRE.
 - slide 1.role === "problem" en lo posible.
 - slides intermedios usan "insight" | "data" | "example".
-- "body" puede omitirse en slide 0; en slides intermedios es una oración completa terminada en punto (sin "...", sin flechas, sin frases colgadas).
+- "body" puede omitirse en slide 0; en slides intermedios es una oración completa ≤ 110 caracteres terminada en punto (sin "...", sin flechas, sin frases colgadas, sin conectores finales sueltos).
 Sin texto extra, sin markdown, sin explicaciones. Solo el array JSON.`;
 }
 

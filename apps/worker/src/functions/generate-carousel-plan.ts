@@ -25,7 +25,7 @@ import { getAdminClient } from '../lib/supabase.js';
 import { withQuota } from '../lib/quotas.js';
 import { callClaude } from '@virus/shared/ai';
 import { MODELS } from '@virus/shared/ai';
-import { buildSlidePlanPrompt } from '@virus/shared/carousel';
+import { buildSlidePlanPrompt, sanitizeSlideBody } from '@virus/shared/carousel';
 import { SlideSpecArraySchema } from '@virus/shared/carousel';
 import type { CarouselBrief, SlideSpec } from '@virus/shared/carousel';
 import type { ProjectBrand } from '@virus/shared/viral';
@@ -35,8 +35,15 @@ import type { ProjectBrand } from '@virus/shared/viral';
 // routinely over-shoot string maximums and that should not blow up the whole
 // carousel. The composer truncates to the same or larger values, so trimming
 // here is safe.
+//
+// MAX_BODY is the SCHEMA cap (must stay ≥ the smart-truncate target so we
+// don't reject a valid sanitized body). The actual content target lives in
+// sanitizeSlideBody() and is 110 — that helper walks back to the last sentence
+// end or whitespace and force-completes with a period, so bodies never end
+// mid-word in the rendered PNG.
 const MAX_HEADLINE = 60;
-const MAX_BODY = 140;
+const MAX_BODY = 120;
+const BODY_TARGET = 110;
 const VALID_ROLES = ['hook', 'problem', 'insight', 'data', 'example', 'cta'] as const;
 
 // ---------------------------------------------------------------------------
@@ -153,9 +160,16 @@ function sanitizeRawSpecs(raw: unknown): unknown {
     }
 
     if (typeof r.body === 'string') {
-      const body = r.body.trim();
-      if (body.length > 0) {
-        result.body = body.length > MAX_BODY ? body.slice(0, MAX_BODY) : body;
+      // Smart truncate: walks back to the last sentence end or whitespace and
+      // force-completes with a period. Returns undefined for pathological
+      // input (one giant word) — better to omit the body than render half a
+      // word. See sanitizeSlideBody() docs for the strategy.
+      const cleaned = sanitizeSlideBody(r.body, BODY_TARGET);
+      if (cleaned !== undefined) {
+        // Final hard cap to satisfy the Zod schema. sanitizeSlideBody already
+        // targets BODY_TARGET (110) so this should be a no-op in practice;
+        // we keep it as a defense-in-depth assertion against future edits.
+        result.body = cleaned.length > MAX_BODY ? cleaned.slice(0, MAX_BODY) : cleaned;
       }
     }
 
@@ -220,9 +234,10 @@ async function callClaudeForSlidePlan(
           `The JSON above failed validation with this error:\n${firstError}\n\n` +
           `Return the corrected JSON array of ${slideCount} SlideSpec objects. ` +
           `STRICT LIMITS: headline MUST be non-empty AND ≤ ${MAX_HEADLINE} chars, ` +
-          `body ≤ ${MAX_BODY} chars, ` +
+          `body ≤ ${BODY_TARGET} chars AND a COMPLETE SENTENCE ending in a period (no dangling connectives, no "..."), ` +
           `role must be one of: ${VALID_ROLES.join(', ')}. ` +
           `EVERY slide needs a headline — empty strings are invalid. ` +
+          `If a body cannot be expressed as a complete sentence in ${BODY_TARGET} chars, SHORTEN the idea — do not truncate mid-thought. ` +
           `Count characters before responding. No markdown.`,
       },
     ],

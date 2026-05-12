@@ -4,6 +4,7 @@ import {
   buildCaptionSystemPrompt,
   buildSlidePlanPrompt,
   buildVisualPrompt,
+  sanitizeSlideBody,
 } from '../prompts.js';
 import type { CarouselBrief, SlideSpec } from '../types.js';
 import type { BrandImageProfile, ProjectBrand } from '../../viral/types.js';
@@ -278,8 +279,15 @@ describe('buildSlidePlanPrompt — narrative arc', () => {
     // forbids that pattern explicitly and demands closed, professional
     // sentences.
     expect(prompt.toLowerCase()).not.toContain('swipe-bait');
-    expect(prompt).toContain('oraciones completas');
-    expect(prompt).toContain('punto final');
+    expect(prompt).toContain('oración completa');
+    expect(prompt).toContain('PUNTO FINAL');
+  });
+
+  it('asks for body ≤ 110 chars (tight target, complete sentence)', () => {
+    const prompt = buildSlidePlanPrompt(brief, mockBrand);
+    expect(prompt).toContain('110');
+    // The old 160-char limit must be gone — it was producing mid-word cuts.
+    expect(prompt).not.toMatch(/máximo 160 caracteres/);
   });
 
   it('pins slide 0 to "hook" and last slide to "cta"', () => {
@@ -514,6 +522,98 @@ describe('buildVisualPrompt — imageProfile path', () => {
     const hookSlide: SlideSpec = { ...slide, role: 'hook' };
     const prompt = buildVisualPrompt(hookSlide, 'bold', brandWithImageProfile);
     expect(prompt.toLowerCase()).toContain('cinematic opening');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sanitizeSlideBody — guards against the "mid-word body" bug that produced
+// rendered PNGs ending in dangling tokens like "puede duplicar tu" with no
+// period and no ellipsis.
+// ---------------------------------------------------------------------------
+
+describe('sanitizeSlideBody', () => {
+  it('returns the input unchanged when it already fits', () => {
+    const body = 'Una oración completa que entra holgada.';
+    expect(sanitizeSlideBody(body, 110)).toBe(body);
+  });
+
+  it('trims whitespace on the in-budget path', () => {
+    expect(sanitizeSlideBody('   con espacios al borde.  ', 110)).toBe('con espacios al borde.');
+  });
+
+  it('returns undefined for an empty or whitespace-only input', () => {
+    expect(sanitizeSlideBody('', 110)).toBeUndefined();
+    expect(sanitizeSlideBody('   \t  ', 110)).toBeUndefined();
+  });
+
+  it('prefers the last complete sentence inside the budget', () => {
+    const body =
+      'Una oración corta. Una segunda que es bastante más larga y se pasa del límite total.';
+    const out = sanitizeSlideBody(body, 60);
+    expect(out).toBeDefined();
+    expect(out!.length).toBeLessThanOrEqual(60);
+    expect(out!.endsWith('.')).toBe(true);
+    // Must keep the first sentence intact, not chop the second mid-word.
+    expect(out).toContain('Una oración corta.');
+    expect(out!).not.toMatch(/larg$/);
+  });
+
+  it('never ends mid-word — closes with a period when no sentence end is in budget', () => {
+    // Pathological input from the screenshots: long body where the last
+    // sentence punctuation lives BEYOND the budget. Old code would slice at
+    // budget mid-word; new code walks back to whitespace and adds a period.
+    const body =
+      'Si el visitante tiene que adivinar qué hacer en tu web ya perdiste un solo CTA visible concreto y repetido en la página puede duplicar tu conversión';
+    const out = sanitizeSlideBody(body, 110);
+    expect(out).toBeDefined();
+    expect(out!.length).toBeLessThanOrEqual(110);
+    // Must end with sentence-closing punctuation.
+    expect(out!).toMatch(/[.!?]$/);
+    // Must NOT cut mid-word — the original text has no period in the first
+    // 110 chars, so we should see a clean word boundary before the final
+    // punctuation, not a partial token like "tu" or "duplic".
+    expect(out!).not.toMatch(/\b(duplic|conversi)\.$/);
+  });
+
+  it('drops trailing connectives so bodies never end on "y", "pero", "porque"…', () => {
+    const body =
+      'La confianza no se construye sola y necesita testimonios reales y casos concretos y señales visibles que respalden tu propuesta de valor frente al cliente que llega frío';
+    const out = sanitizeSlideBody(body, 110);
+    expect(out).toBeDefined();
+    expect(out!.length).toBeLessThanOrEqual(110);
+    expect(out!).toMatch(/[.!?]$/);
+    // No dangling connective right before the period.
+    expect(out!).not.toMatch(/\b(y|pero|porque|que|para|de|en|con)\.$/i);
+  });
+
+  it('strips trailing punctuation like commas, dashes, ellipses before closing', () => {
+    const body =
+      'Una idea que arranca bien, sigue bien, y se estira con comas, comas, comas, comas y más comas que no le aportan nada al lector que sólo quiere claridad';
+    const out = sanitizeSlideBody(body, 110);
+    expect(out).toBeDefined();
+    expect(out!).toMatch(/[.!?]$/);
+    expect(out!).not.toMatch(/[,;:\-–—]\.$/);
+    expect(out!).not.toMatch(/…$/);
+  });
+
+  it('returns undefined for an input with no whitespace and over budget (one giant word)', () => {
+    const body = 'A'.repeat(200);
+    expect(sanitizeSlideBody(body, 110)).toBeUndefined();
+  });
+
+  it('respects custom maxLen', () => {
+    const body = 'Primera oración corta. Segunda oración un poquito más larga.';
+    const out = sanitizeSlideBody(body, 30);
+    expect(out).toBeDefined();
+    expect(out!.length).toBeLessThanOrEqual(30);
+    expect(out).toBe('Primera oración corta.');
+  });
+
+  it('keeps an existing period from the in-budget sentence (no double period)', () => {
+    const body = 'Termina así. Lo que sigue se descarta porque excede el límite por completo.';
+    const out = sanitizeSlideBody(body, 50);
+    expect(out).toBeDefined();
+    expect(out!).not.toMatch(/\.\.$/);
   });
 });
 
