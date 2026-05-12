@@ -38,3 +38,14 @@ export const ALL_SEEDS: SeedProject[] = [SEED_APEX_DEV];
 export function getSeedBySlug(slug: string): SeedProject | undefined {
   return ALL_SEEDS.find((s) => s.slug === slug);
 }
+
+// Per-brand image-generation profiles — see ./image-profiles.ts for the
+// curated templates for APEX, BotLode, OficiosApp, Assistify.
+export {
+  APEX_IMAGE_PROFILE,
+  BOTLODE_IMAGE_PROFILE,
+  OFICIOS_IMAGE_PROFILE,
+  ASSISTIFY_IMAGE_PROFILE,
+  IMAGE_PROFILES,
+  getImageProfileForBrand,
+} from './image-profiles.js';

@@ -201,18 +201,30 @@ export const regenerateCarouselSlide = inngest.createFunction(
     });
 
     // ------------------------------------------------------------------
-    // 3. Generate new base image — when regenerating a non-anchor slide,
-    //    download the existing anchor image (slide 0) and pass it as the
-    //    visual reference so the regenerated slide stays consistent with the
-    //    rest of the carousel (same character, palette, mood). If the anchor
-    //    image isn't available yet (e.g. user is regenerating slide 0 itself
-    //    or slide 0 hasn't been produced), fall back to text-only generation.
+    // 3. Generate new base image
+    //
+    // Strategy depends on the brand's imageProfile.subjectStrategy:
+    //
+    // - `character-anchor` (default / personal-brand photo) — when
+    //   regenerating a non-hook slide, download the existing slide-0 image
+    //   and pass it as the visual reference so the regenerated slide keeps
+    //   the same character/palette as the rest of the carousel. If slide 0
+    //   isn't available yet, degrade to text-only generation.
+    //
+    // - `world-anchor` / `standalone` (tech/SaaS, e.g. APEX) — NEVER pass a
+    //   reference image. Continuity is anchored by the brand's imageProfile
+    //   (technique + palette + mood) in the text prompt. Passing slide 0 as
+    //   a reference would force the model to mimic its SUBJECT (the wrong
+    //   continuity axis), defeating the whole point of world-anchor.
     // ------------------------------------------------------------------
     const imagePath = await step.run('generate-image', async () => {
       const db = getAdminClient();
 
+      const subjectStrategy =
+        brand.visualStyle?.imageProfile?.subjectStrategy ?? 'character-anchor';
+
       let referenceImage: Buffer | undefined;
-      if (idx !== 0) {
+      if (subjectStrategy === 'character-anchor' && idx !== 0) {
         const anchorPath = `${userId}/${carouselId}/slide-0.png`;
         try {
           const { data, error: dlErr } = await db.storage

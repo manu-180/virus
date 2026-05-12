@@ -26,7 +26,7 @@ import {
 } from '../image-provider.js';
 import { generateAllSlideImages } from '../image-batch.js';
 import type { CarouselBrief, SlideSpec } from '../types.js';
-import type { ProjectBrand } from '../../viral/types.js';
+import type { BrandImageProfile, ProjectBrand } from '../../viral/types.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -603,5 +603,187 @@ describe('generateAllSlideImages', () => {
     expect(result.succeeded).toEqual([]);
     expect(result.failed).toEqual([]);
     expect(generateImageGemini).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // world-anchor strategy — APEX-style, no chaining, every slide independent
+  // -------------------------------------------------------------------------
+
+  const worldAnchorProfile: BrandImageProfile = {
+    mode: 'illustration-3d',
+    technique: 'premium 3D render',
+    subjectStrategy: 'world-anchor',
+    composition: 'single hero subject, lots of negative space',
+    moodKeywords: ['cinematic', 'premium'],
+    negativeVisuals: ['humans', 'text'],
+    subjectLibrary: {
+      hook: ['monolith with cyan fissures'],
+    },
+  };
+
+  const apexBrand: ProjectBrand = {
+    ...mockBrand,
+    visualStyle: {
+      accentColor: '#6366F1',
+      secondaryAccent: '#00D4FF',
+      backgroundColor: '#050B18',
+      vibe: 'tech-premium dark mode',
+      imageProfile: worldAnchorProfile,
+    },
+  };
+
+  it('world-anchor: never passes a referenceImage to any slide', async () => {
+    vi.mocked(generateImageGemini).mockImplementation(async (input) => {
+      // Every single call must come WITHOUT a reference image
+      expect(input.referenceImage).toBeUndefined();
+      return { bytes: fakeImageBuffer, width: 1080, height: 1350, costUsd: 0.04 };
+    });
+
+    const slides = makeSlides(6);
+    const { db } = makeSupabaseMock();
+
+    const result = await generateAllSlideImages({
+      brief: mockBrief,
+      slides,
+      brand: apexBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+    });
+
+    expect(result.succeeded).toHaveLength(6);
+    expect(result.failed).toHaveLength(0);
+    expect(generateImageGemini).toHaveBeenCalledTimes(6);
+  });
+
+  it('world-anchor: per-slide failures do NOT cascade to others', async () => {
+    vi.mocked(generateImageGemini).mockImplementation(async ({ prompt }) => {
+      if (prompt.includes('Slide 2 visual')) {
+        throw new Error('gemini_no_image: policy violation');
+      }
+      return { bytes: fakeImageBuffer, width: 1080, height: 1350, costUsd: 0.04 };
+    });
+
+    const slides = makeSlides(5);
+    const { db } = makeSupabaseMock();
+
+    const result = await generateAllSlideImages({
+      brief: mockBrief,
+      slides,
+      brand: apexBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+    });
+
+    expect(result.succeeded).toHaveLength(4);
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]?.idx).toBe(2);
+  });
+
+  it('world-anchor: hook failure does NOT prevent the rest from generating', async () => {
+    vi.mocked(generateImageGemini).mockImplementation(async ({ prompt }) => {
+      if (prompt.includes('Slide 0 visual')) {
+        throw new Error('gemini_no_image: policy violation on hook');
+      }
+      return { bytes: fakeImageBuffer, width: 1080, height: 1350, costUsd: 0.04 };
+    });
+
+    const slides = makeSlides(4);
+    const { db } = makeSupabaseMock();
+
+    const result = await generateAllSlideImages({
+      brief: mockBrief,
+      slides,
+      brand: apexBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+    });
+
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]?.idx).toBe(0);
+    expect(result.succeeded).toHaveLength(3);
+  });
+
+  it('world-anchor: strips buffers from succeeded results', async () => {
+    vi.mocked(generateImageGemini).mockResolvedValue({
+      bytes: fakeImageBuffer,
+      width: 1080,
+      height: 1350,
+      costUsd: 0.04,
+    });
+
+    const slides = makeSlides(3);
+    const { db } = makeSupabaseMock();
+
+    const result = await generateAllSlideImages({
+      brief: mockBrief,
+      slides,
+      brand: apexBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+    });
+
+    for (const s of result.succeeded) {
+      expect((s as unknown as { buffer?: Buffer }).buffer).toBeUndefined();
+    }
+  });
+
+  it('world-anchor: calls onSlideDone for each succeeded slide without leaking the buffer', async () => {
+    vi.mocked(generateImageGemini).mockResolvedValue({
+      bytes: fakeImageBuffer,
+      width: 1080,
+      height: 1350,
+      costUsd: 0.04,
+    });
+
+    const slides = makeSlides(4);
+    const { db } = makeSupabaseMock();
+    const onSlideDone = vi.fn().mockResolvedValue(undefined);
+
+    await generateAllSlideImages({
+      brief: mockBrief,
+      slides,
+      brand: apexBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+      onSlideDone,
+    });
+
+    expect(onSlideDone).toHaveBeenCalledTimes(4);
+    for (const call of onSlideDone.mock.calls) {
+      const success = call[1] as { buffer?: Buffer };
+      expect(success.buffer).toBeUndefined();
+    }
+  });
+
+  it('world-anchor: each slide prompt includes the imageProfile technique', async () => {
+    vi.mocked(generateImageGemini).mockResolvedValue({
+      bytes: fakeImageBuffer,
+      width: 1080,
+      height: 1350,
+      costUsd: 0.04,
+    });
+
+    const slides = makeSlides(3);
+    const { db } = makeSupabaseMock();
+
+    await generateAllSlideImages({
+      brief: mockBrief,
+      slides,
+      brand: apexBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+    });
+
+    for (const call of vi.mocked(generateImageGemini).mock.calls) {
+      const input = call[0];
+      expect(input.prompt).toContain('premium 3D render');
+      expect(input.prompt).toMatch(/Negative:.*no humans/);
+    }
   });
 });

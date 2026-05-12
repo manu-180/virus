@@ -6,7 +6,7 @@ import {
   type SlideImageResult,
 } from './image-provider.js';
 import type { CarouselBrief, SlideSpec } from './types.js';
-import type { ProjectBrand } from '../viral/types.js';
+import type { BrandImageProfile, ProjectBrand } from '../viral/types.js';
 
 // Concurrency for the non-anchor slides. The anchor (slide 0) is always
 // generated alone before any other slide so its output can become the reference
@@ -108,18 +108,40 @@ async function generateOne(args: GenerateOneArgs): Promise<SlideSuccessInternal 
 }
 
 /**
+ * Resolve the effective subject strategy for this brand. Brands without an
+ * imageProfile fall back to `character-anchor` to preserve the pre-refactor
+ * behavior (single shared character across all slides via image-to-image).
+ */
+function resolveStrategy(brand: ProjectBrand): BrandImageProfile['subjectStrategy'] {
+  return brand.visualStyle?.imageProfile?.subjectStrategy ?? 'character-anchor';
+}
+
+/**
  * Generate images for all slides.
  *
- * Strategy: **anchor-first chaining.** The slide tagged `role: 'hook'` (or
- * idx 0 as fallback) is generated FIRST, alone. Its image bytes become the
- * reference image passed to every subsequent slide via image-to-image, so the
- * whole carousel reads as one continuous visual story (same character, same
- * setting, same palette) instead of N independent images.
+ * Two strategies based on the brand's `imageProfile.subjectStrategy`:
  *
- * Failure semantics: individual slide failures do NOT abort the batch. If the
- * anchor itself fails, we degrade gracefully — every remaining slide is
- * generated in pure text-to-image mode (no reference) so the user still gets a
- * carousel, just without the visual continuity bonus.
+ * **`character-anchor` (default / back-compat)** — "anchor-first chaining."
+ * The slide tagged `role: 'hook'` is generated FIRST, alone. Its bytes become
+ * the reference image passed to every subsequent slide via image-to-image, so
+ * the whole carousel reads as one continuous visual story (same character,
+ * same setting, same palette). Good for personal brands and photographic
+ * carousels. **This is the pre-refactor behavior.**
+ *
+ * **`world-anchor` (new, for tech/SaaS brands like APEX)** — independent
+ * generation with shared world description. NO image-to-image chaining: every
+ * slide is generated in parallel with its own strong text prompt that anchors
+ * the same palette + lighting + technique. Each slide depicts a DIFFERENT
+ * subject (drawn from the brand's per-role subjectLibrary) so the carousel
+ * never feels like 8 photos of the same person. Failure-isolated by design:
+ * if one slide fails, the rest are unaffected.
+ *
+ * **`standalone`** — same as world-anchor but without ordering constraints.
+ *
+ * Failure semantics:
+ *  - `character-anchor`: anchor failure degrades to text-only mode for the
+ *    rest (no reference image), so partial carousels still ship.
+ *  - `world-anchor` / `standalone`: per-slide failures are independent.
  */
 export async function generateAllSlideImages(
   args: GenerateAllSlideImagesArgs,
@@ -127,6 +149,39 @@ export async function generateAllSlideImages(
   const { brief, slides, brand, userId, carouselId, supabase, onSlideDone } = args;
 
   if (slides.length === 0) return { succeeded: [], failed: [] };
+
+  const strategy = resolveStrategy(brand);
+  if (strategy !== 'character-anchor') {
+    return generateAllSlideImagesIndependent({
+      brief,
+      slides,
+      brand,
+      userId,
+      carouselId,
+      supabase,
+      ...(onSlideDone ? { onSlideDone } : {}),
+    });
+  }
+
+  return generateAllSlideImagesAnchorChain({
+    brief,
+    slides,
+    brand,
+    userId,
+    carouselId,
+    supabase,
+    ...(onSlideDone ? { onSlideDone } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Anchor-chain strategy (legacy, personal-brand / photo carousels)
+// ---------------------------------------------------------------------------
+
+async function generateAllSlideImagesAnchorChain(
+  args: GenerateAllSlideImagesArgs,
+): Promise<BatchResult> {
+  const { brief, slides, brand, userId, carouselId, supabase, onSlideDone } = args;
 
   const anchor = pickAnchor(slides);
   const rest = anchor ? slides.filter((s) => s.idx !== anchor.idx) : slides;
@@ -192,10 +247,56 @@ export async function generateAllSlideImages(
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Step 3: scrub buffers from the returned successes — they were only used
-  // internally for the anchor → rest chain.
-  // -------------------------------------------------------------------------
+  return {
+    succeeded: succeeded.map(stripBuffer),
+    failed,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Independent strategy (world-anchor / standalone, tech-SaaS brands)
+// ---------------------------------------------------------------------------
+
+/**
+ * All slides generated in parallel with shared CONCURRENCY. No reference image
+ * is ever passed — each slide is fully described by its text prompt + the
+ * brand's imageProfile (technique, composition, palette, mood, negatives).
+ *
+ * This is the path APEX uses. The "story" of the carousel emerges from the
+ * sequence of distinct subjects (each pulled from the brand's role-specific
+ * subjectLibrary) sharing one visual world.
+ */
+async function generateAllSlideImagesIndependent(
+  args: GenerateAllSlideImagesArgs,
+): Promise<BatchResult> {
+  const { brief, slides, brand, userId, carouselId, supabase, onSlideDone } = args;
+
+  const succeeded: SlideSuccessInternal[] = [];
+  const failed: SlideFailed[] = [];
+  const limit = pLimit(CONCURRENCY);
+
+  const results = await Promise.all(
+    slides.map((slide) =>
+      limit(() =>
+        generateOne({
+          slide,
+          brief,
+          brand,
+          userId,
+          carouselId,
+          supabase,
+          // No referenceImage — independent generation
+          ...(onSlideDone ? { onSlideDone } : {}),
+        }),
+      ),
+    ),
+  );
+
+  for (const r of results) {
+    if ('error' in r) failed.push(r);
+    else succeeded.push(r);
+  }
+
   return {
     succeeded: succeeded.map(stripBuffer),
     failed,

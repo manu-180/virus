@@ -6,7 +6,7 @@ import {
   buildVisualPrompt,
 } from '../prompts.js';
 import type { CarouselBrief, SlideSpec } from '../types.js';
-import type { ProjectBrand } from '../../viral/types.js';
+import type { BrandImageProfile, ProjectBrand } from '../../viral/types.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -296,6 +296,218 @@ describe('buildSlidePlanPrompt — narrative arc', () => {
   it('uses the slideCount to compute the lastIdx in instructions', () => {
     const prompt8 = buildSlidePlanPrompt({ ...brief, slideCount: 8 }, mockBrand);
     expect(prompt8).toMatch(/slide 7\.role === "cta"/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// imageProfile-driven prompts — modern schema-aware path
+// ---------------------------------------------------------------------------
+
+const apexImageProfile: BrandImageProfile = {
+  mode: 'illustration-3d',
+  technique: 'premium 3D render with edge lighting and shallow depth of field',
+  subjectStrategy: 'world-anchor',
+  composition: 'single hero subject centered, 40%+ negative space below',
+  moodKeywords: ['cinematic', 'premium', 'moody'],
+  negativeVisuals: ['humans', 'text', 'logos', 'clutter'],
+  subjectLibrary: {
+    hook: ['a fragmented dark monolith with glowing cyan fissures'],
+    problem: ['a shattered geometric prism leaking red warning glow'],
+    insight: ['an illuminated 3D cube with cyan internal glow'],
+    cta: ['the monolith from the hook now whole and fully illuminated'],
+  },
+};
+
+const brandWithImageProfile: ProjectBrand = {
+  projectId: 'apex-test',
+  brandName: 'APEX',
+  oneLiner: 'Estudio de desarrollo',
+  voiceTone: 'directo, sin BS',
+  ctas: [],
+  doNotSay: [],
+  audience: { who: 'founders', where: 'LATAM', pains: ['no escala'] },
+  valueProps: [],
+  features: [],
+  caseStudies: [],
+  parsedAt: new Date().toISOString(),
+  visualStyle: {
+    accentColor: '#6366F1',
+    secondaryAccent: '#00D4FF',
+    backgroundColor: '#050B18',
+    vibe: 'tech-premium dark mode',
+    imageProfile: apexImageProfile,
+  },
+};
+
+describe('buildSlidePlanPrompt — imageProfile path', () => {
+  const brief: CarouselBrief = {
+    topic: 'Por qué tu MVP no escala',
+    angle: 'contrarian',
+    tone: 'direct',
+    audience: 'founders',
+    slideCount: 6,
+    stylePreset: 'bold',
+    language: 'es',
+    cta: 'Hablamos',
+  };
+
+  it('includes the brand technique description', () => {
+    const prompt = buildSlidePlanPrompt(brief, brandWithImageProfile);
+    expect(prompt).toContain(apexImageProfile.technique);
+  });
+
+  it('includes the brand composition rules', () => {
+    const prompt = buildSlidePlanPrompt(brief, brandWithImageProfile);
+    expect(prompt).toContain(apexImageProfile.composition);
+  });
+
+  it('includes the subjectStrategy line', () => {
+    const prompt = buildSlidePlanPrompt(brief, brandWithImageProfile);
+    expect(prompt).toMatch(/Estrategia de continuidad: world-anchor/);
+  });
+
+  it('includes the per-role subject library with at least one role', () => {
+    const prompt = buildSlidePlanPrompt(brief, brandWithImageProfile);
+    expect(prompt).toContain('a fragmented dark monolith with glowing cyan fissures');
+    expect(prompt).toContain('an illuminated 3D cube with cyan internal glow');
+  });
+
+  it('emits the negative visuals as restrictions', () => {
+    const prompt = buildSlidePlanPrompt(brief, brandWithImageProfile);
+    expect(prompt).toContain('humans');
+    expect(prompt).toContain('clutter');
+    expect(prompt.toLowerCase()).toContain('restricciones visuales');
+  });
+
+  it('tells Claude NOT to repeat the same subject across slides (world-anchor)', () => {
+    const prompt = buildSlidePlanPrompt(brief, brandWithImageProfile);
+    expect(prompt.toLowerCase()).toContain('no repitas el mismo sujeto');
+  });
+
+  it('does NOT include the legacy "30-year-old man at desk" example in profile mode', () => {
+    const prompt = buildSlidePlanPrompt(brief, brandWithImageProfile);
+    // The example is shown explicitly as MALO (bad), but should not be presented
+    // as the suggested visualPrompt format like in the legacy flow.
+    // It still appears as a counter-example, so we assert it's marked as bad:
+    expect(prompt).toMatch(/Ejemplo MALO/);
+  });
+
+  it('falls back to legacy character-anchor instructions when brand has no imageProfile', () => {
+    const prompt = buildSlidePlanPrompt(brief, mockBrand);
+    expect(prompt).toContain('Continuidad visual entre slides');
+    expect(prompt).toContain('mismo personaje');
+  });
+
+  it('uses character-anchor language when subjectStrategy is character-anchor', () => {
+    const characterAnchored: ProjectBrand = {
+      ...brandWithImageProfile,
+      visualStyle: {
+        ...brandWithImageProfile.visualStyle,
+        imageProfile: { ...apexImageProfile, subjectStrategy: 'character-anchor' },
+      },
+    };
+    const prompt = buildSlidePlanPrompt(brief, characterAnchored);
+    expect(prompt.toLowerCase()).toContain('mismo personaje');
+    expect(prompt).toMatch(/Estrategia de continuidad: character-anchor/);
+  });
+});
+
+describe('buildVisualPrompt — imageProfile path', () => {
+  const slide = mockSlides[0]!;
+
+  it('composes the final prompt from the imageProfile technique', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', brandWithImageProfile);
+    expect(prompt).toContain(apexImageProfile.technique);
+  });
+
+  it('includes the imageProfile composition rules', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', brandWithImageProfile);
+    expect(prompt).toContain(apexImageProfile.composition);
+  });
+
+  it('joins mood keywords into the prompt', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', brandWithImageProfile);
+    expect(prompt).toContain('cinematic');
+    expect(prompt).toContain('premium');
+  });
+
+  it('emits negatives prefixed with "no"', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', brandWithImageProfile);
+    expect(prompt).toMatch(/Negative:.*no humans/);
+    expect(prompt).toMatch(/Negative:.*no clutter/);
+  });
+
+  it('passes through negatives that already start with "no" without doubling the prefix', () => {
+    const brandWithExplicitNos: ProjectBrand = {
+      ...brandWithImageProfile,
+      visualStyle: {
+        ...brandWithImageProfile.visualStyle,
+        imageProfile: {
+          ...apexImageProfile,
+          negativeVisuals: ['no humans', 'no text', 'logos'],
+        },
+      },
+    };
+    const prompt = buildVisualPrompt(slide, 'bold', brandWithExplicitNos);
+    expect(prompt).not.toContain('no no humans');
+    expect(prompt).toContain('no humans');
+    expect(prompt).toContain('no logos');
+  });
+
+  it('keeps the per-slide visualPrompt at the front so it dominates', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', brandWithImageProfile);
+    expect(prompt.indexOf(slide.visualPrompt)).toBeLessThan(prompt.indexOf('Medium:'));
+  });
+
+  it('emits the medium label from imageProfile.mode', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', brandWithImageProfile);
+    expect(prompt).toContain('Medium: illustration-3d');
+  });
+
+  it('OMITS the reference-image directive for world-anchor brands even when hasReferenceImage=true', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', brandWithImageProfile, {
+      hasReferenceImage: true,
+    });
+    expect(prompt).not.toContain('Use the attached image as the canonical visual reference');
+  });
+
+  it('EMITS the reference-image directive for character-anchor profile brands with hasReferenceImage=true', () => {
+    const characterAnchored: ProjectBrand = {
+      ...brandWithImageProfile,
+      visualStyle: {
+        ...brandWithImageProfile.visualStyle,
+        imageProfile: { ...apexImageProfile, subjectStrategy: 'character-anchor' },
+      },
+    };
+    const prompt = buildVisualPrompt(slide, 'bold', characterAnchored, {
+      hasReferenceImage: true,
+    });
+    expect(prompt).toContain('Use the attached image as the canonical visual reference');
+  });
+
+  it('still inserts the topic anchor in profile mode', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', brandWithImageProfile, {
+      topic: 'Por qué tu MVP no escala',
+    });
+    expect(prompt).toContain('Por qué tu MVP no escala');
+  });
+
+  it('threads the brand palette colors into the prompt', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', brandWithImageProfile);
+    expect(prompt).toContain('#6366F1');
+    expect(prompt).toContain('#00D4FF');
+    expect(prompt).toContain('#050B18');
+  });
+
+  it('still includes aspect ratio in profile mode', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', brandWithImageProfile);
+    expect(prompt).toContain('4:5');
+  });
+
+  it('preserves role-mood layer for hook in profile mode', () => {
+    const hookSlide: SlideSpec = { ...slide, role: 'hook' };
+    const prompt = buildVisualPrompt(hookSlide, 'bold', brandWithImageProfile);
+    expect(prompt.toLowerCase()).toContain('cinematic opening');
   });
 });
 
