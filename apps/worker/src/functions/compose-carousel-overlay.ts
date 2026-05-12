@@ -59,6 +59,14 @@ function slideRowToSpec(row: CarouselSlideRow): SlideSpec {
   return { idx: row.idx, role: 'insight', headline: '', visualPrompt: row.prompt };
 }
 
+// A spec with empty headline composes a PNG with a visible overlay block but
+// no text — the composer will throw `compose_empty_headline`, but we'd rather
+// detect it before kicking off the heavy compose work so the slide is marked
+// 'failed' with a precise error and the gallery shows the alert state.
+function specHasEmptyHeadline(spec: SlideSpec): boolean {
+  return !spec.headline || spec.headline.trim().length === 0;
+}
+
 function resolvePreset(presetName: string, visualStyle?: BrandVisualStyle): StylePreset {
   const key = presetName as keyof typeof STYLE_PRESETS;
   const base = STYLE_PRESETS[key] ?? STYLE_PRESETS.bold;
@@ -170,11 +178,45 @@ export const composeCarouselOverlay = inngest.createFunction(
     const composeResult = await step.run('compose-all', async () => {
       const db = getAdminClient();
 
-      const slidesToCompose = slides.map((row) => ({
+      const specsWithRows = slides.map((row) => ({
         idx: row.idx,
         spec: slideRowToSpec(row),
         baseImagePath: row.image_path,
       }));
+
+      // Pre-flight: pull aside slides whose overlay_text has an empty headline.
+      // These would throw `compose_empty_headline` inside composeSlide; failing
+      // them explicitly here gives a clearer error string and skips the
+      // download+upload roundtrip for a slide we know will fail.
+      const brokenSpecIdxs = specsWithRows
+        .filter((s) => specHasEmptyHeadline(s.spec))
+        .map((s) => s.idx);
+
+      if (brokenSpecIdxs.length > 0) {
+        console.warn(
+          JSON.stringify({
+            fn: 'compose-carousel-overlay',
+            step: 'compose-all',
+            carouselId,
+            warning: 'broken_overlay_specs',
+            idxs: brokenSpecIdxs,
+          }),
+        );
+        await Promise.all(
+          brokenSpecIdxs.map((bIdx) =>
+            db
+              .from('carousel_slides')
+              .update({
+                status: 'failed',
+                error: 'compose_empty_headline:plan_returned_empty',
+              })
+              .eq('carousel_id', carouselId)
+              .eq('idx', bIdx),
+          ),
+        );
+      }
+
+      const slidesToCompose = specsWithRows.filter((s) => !specHasEmptyHeadline(s.spec));
 
       const result = await composeAllSlides({
         slides: slidesToCompose,

@@ -141,8 +141,16 @@ function sanitizeRawSpecs(raw: unknown): unknown {
         ? r.role
         : 'insight';
 
-    const headline = typeof r.headline === 'string' ? r.headline.trim() : '';
-    result.headline = headline.length > MAX_HEADLINE ? headline.slice(0, MAX_HEADLINE) : headline;
+    // Don't silently coerce missing/empty headlines to "" — leave the field
+    // undefined so SlideSpecSchema.headline.min(1) rejects it and the retry
+    // path gets a specific "headline required" error to fix.
+    if (typeof r.headline === 'string') {
+      const headline = r.headline.trim();
+      if (headline.length > 0) {
+        result.headline =
+          headline.length > MAX_HEADLINE ? headline.slice(0, MAX_HEADLINE) : headline;
+      }
+    }
 
     if (typeof r.body === 'string') {
       const body = r.body.trim();
@@ -211,8 +219,10 @@ async function callClaudeForSlidePlan(
         content:
           `The JSON above failed validation with this error:\n${firstError}\n\n` +
           `Return the corrected JSON array of ${slideCount} SlideSpec objects. ` +
-          `STRICT LIMITS: headline ≤ ${MAX_HEADLINE} chars, body ≤ ${MAX_BODY} chars, ` +
+          `STRICT LIMITS: headline MUST be non-empty AND ≤ ${MAX_HEADLINE} chars, ` +
+          `body ≤ ${MAX_BODY} chars, ` +
           `role must be one of: ${VALID_ROLES.join(', ')}. ` +
+          `EVERY slide needs a headline — empty strings are invalid. ` +
           `Count characters before responding. No markdown.`,
       },
     ],

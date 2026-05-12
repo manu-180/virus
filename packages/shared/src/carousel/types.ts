@@ -7,7 +7,11 @@ import { z } from 'zod';
 export const SlideSpecSchema = z.object({
   idx: z.number().int().min(0),
   role: z.enum(['hook', 'problem', 'insight', 'data', 'example', 'cta']),
-  headline: z.string().max(60),
+  // headline MUST be non-empty: an empty headline composes a slide PNG with
+  // a visible solid overlay block but no text inside — the slide is marked
+  // status='ready' and the user has no signal that something is wrong.
+  // Reject at the validation boundary so the LLM-fix retry path kicks in.
+  headline: z.string().min(1).max(60),
   body: z.string().max(140).optional(),
   visualPrompt: z.string().min(1),
 });

@@ -7,15 +7,28 @@
  * Flow:
  *  1. mark-generating: slide status → 'generating'
  *  2. load-context: fetch carousel brief/style, slide overlay spec, project brand
+ *  2b. recover-overlay-spec (only if slideSpec.headline is empty/invalid):
+ *      re-plan ONLY this slide via Claude and persist the corrected spec to
+ *      DB. Auto-heals slides whose original plan-step produced an empty
+ *      headline (which would otherwise compose a text-less PNG marked 'ready').
  *  3. generate-image: call generateCarouselSlideImage, update image_path in DB
- *  4. compose-overlay: download base image, composeSlide, upload, update composed_path + status='done'
+ *  4. compose-overlay: download base image, composeSlide, upload, update composed_path + status='ready'
  */
 
+import { z } from 'zod';
 import { inngest } from '../inngest/index.js';
 import { getAdminClient } from '../lib/supabase.js';
-import { generateCarouselSlideImage, composeSlide, STYLE_PRESETS, applyBrandOverrides } from '@virus/shared/carousel';
+import {
+  generateCarouselSlideImage,
+  composeSlide,
+  STYLE_PRESETS,
+  applyBrandOverrides,
+  buildSlidePlanPrompt,
+  SlideSpecArraySchema,
+} from '@virus/shared/carousel';
 import type { SlideSpec, CarouselBrief, StylePreset } from '@virus/shared/carousel';
 import type { ProjectBrand } from '@virus/shared/viral';
+import { callClaude, MODELS } from '@virus/shared/ai';
 
 // ---------------------------------------------------------------------------
 // Row shapes
@@ -103,6 +116,80 @@ function resolvePreset(presetName: string, visualStyle?: BrandVisualStyle): Styl
   return applyBrandOverrides(base, visualStyle);
 }
 
+// A slide spec is "broken" if the headline is missing, empty, or whitespace-
+// only. Such a spec composes to a text-less PNG that gets marked status='ready'
+// — exactly the silent-failure class of bug the recovery path exists to fix.
+function isSpecBroken(spec: SlideSpec): boolean {
+  return !spec.headline || spec.headline.trim().length === 0;
+}
+
+function stripJsonFences(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('```')) return trimmed;
+  return trimmed.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+}
+
+/**
+ * Re-plan a single slide by re-running the carousel plan prompt and extracting
+ * the slide at `idx`. We reuse the full prompt rather than crafting a "single
+ * slide" prompt so the model still sees the narrative arc (hook → problem →
+ * insight → cta) and produces a headline that fits the carousel's voice.
+ *
+ * The extra Claude call only runs on the rare recovery path (broken overlay
+ * spec), so the token cost is acceptable for the auto-heal value.
+ */
+async function replanSingleSlide(
+  brief: CarouselBrief,
+  brand: ProjectBrand,
+  idx: number,
+  fallback: SlideSpec,
+): Promise<SlideSpec> {
+  const prompt = buildSlidePlanPrompt(brief, brand);
+
+  const result = await callClaude({
+    model: MODELS.default,
+    system:
+      'You are a JSON-only responder. Output only valid JSON arrays, no markdown, no text.',
+    messages: [{ role: 'user', content: prompt }],
+    maxTokens: 200 * brief.slideCount + 400,
+  });
+
+  const raw = result.text ?? '';
+
+  try {
+    const parsed = SlideSpecArraySchema.parse(JSON.parse(stripJsonFences(raw)));
+    const match = parsed.find((s) => s.idx === idx);
+    if (match && match.headline.trim().length > 0) {
+      // Preserve the existing idx/role from DB if Claude renumbered things.
+      const recovered: SlideSpec = {
+        idx: fallback.idx,
+        role: fallback.role,
+        headline: match.headline,
+        visualPrompt: match.visualPrompt || fallback.visualPrompt,
+      };
+      if (match.body !== undefined) recovered.body = match.body;
+      return recovered;
+    }
+  } catch (err) {
+    console.warn(
+      JSON.stringify({
+        fn: 'regenerate-carousel-slide',
+        step: 'recover-overlay-spec',
+        idx,
+        warning: 'replan_parse_failed',
+        error: err instanceof z.ZodError ? err.issues : (err as Error)?.message,
+      }),
+    );
+  }
+
+  // Last resort: derive a minimal headline from the brief topic so compose
+  // doesn't throw `compose_empty_headline`. Not pretty, but the slide will be
+  // visibly off-brand and the user will re-trigger regenerate — which beats a
+  // silent text-less PNG.
+  const safeHeadline = (brief.topic || 'Slide').slice(0, 60).trim() || 'Slide';
+  return { ...fallback, headline: safeHeadline };
+}
+
 // ---------------------------------------------------------------------------
 // Inngest function
 // ---------------------------------------------------------------------------
@@ -162,7 +249,7 @@ export const regenerateCarouselSlide = inngest.createFunction(
     // ------------------------------------------------------------------
     // 2. Load context
     // ------------------------------------------------------------------
-    const { brief, brand, preset, slideSpec } = await step.run('load-context', async () => {
+    const loaded = await step.run('load-context', async () => {
       const db = getAdminClient();
 
       const { data: carouselRow, error: carouselErr } = await db
@@ -208,6 +295,62 @@ export const regenerateCarouselSlide = inngest.createFunction(
         slideSpec: slideRowToSpec(slideRow as CarouselSlideRow),
       };
     });
+
+    const { brief, brand, preset } = loaded;
+    let slideSpec: SlideSpec = loaded.slideSpec;
+
+    // ------------------------------------------------------------------
+    // 2b. Recover broken overlay spec
+    //
+    // If overlay_text in DB has an empty/whitespace headline, composing
+    // will throw `compose_empty_headline` and the slide ends in 'failed'
+    // — the user clicks Regenerar again and gets the same failure.
+    //
+    // Auto-heal by re-running the slide plan via Claude and persisting
+    // the corrected spec to DB BEFORE the image+compose steps run.
+    // ------------------------------------------------------------------
+    if (isSpecBroken(slideSpec)) {
+      slideSpec = await step.run('recover-overlay-spec', async () => {
+        console.log(
+          JSON.stringify({
+            fn: 'regenerate-carousel-slide',
+            step: 'recover-overlay-spec',
+            carouselId,
+            idx,
+            reason: 'empty_headline_in_overlay_text',
+          }),
+        );
+
+        const recovered = await replanSingleSlide(brief, brand, idx, loaded.slideSpec);
+
+        const db = getAdminClient();
+        const { error: updateErr } = await db
+          .from('carousel_slides')
+          .update({
+            overlay_text: JSON.stringify(recovered),
+            prompt: recovered.visualPrompt,
+          })
+          .eq('carousel_id', carouselId)
+          .eq('idx', idx);
+
+        if (updateErr) {
+          // Non-fatal: continue with the in-memory recovered spec. The DB
+          // will get its new overlay_text on the next successful regenerate.
+          console.warn(
+            JSON.stringify({
+              fn: 'regenerate-carousel-slide',
+              step: 'recover-overlay-spec',
+              carouselId,
+              idx,
+              warning: 'persist_failed',
+              error: updateErr.message,
+            }),
+          );
+        }
+
+        return recovered;
+      });
+    }
 
     // ------------------------------------------------------------------
     // 3. Generate new base image

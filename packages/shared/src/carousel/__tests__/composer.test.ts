@@ -87,6 +87,22 @@ describe('composeSlide', () => {
     expect(meta.height).toBe(1350);
   }, 30_000);
 
+  it('throws compose_empty_headline when headline is empty', async () => {
+    const base = await makeFakeBaseImage();
+    const emptySlide: SlideSpec = { ...mockSlide, headline: '' };
+    await expect(
+      composeSlide({ baseImage: base, slide: emptySlide, preset: STYLE_PRESETS.bold }),
+    ).rejects.toThrow(/compose_empty_headline/);
+  });
+
+  it('throws compose_empty_headline when headline is whitespace only', async () => {
+    const base = await makeFakeBaseImage();
+    const wsSlide: SlideSpec = { ...mockSlide, headline: '   \t  ' };
+    await expect(
+      composeSlide({ baseImage: base, slide: wsSlide, preset: STYLE_PRESETS.bold }),
+    ).rejects.toThrow(/compose_empty_headline/);
+  });
+
   it('title longer than 60 chars is truncated with "…"', async () => {
     const base = await makeFakeBaseImage();
     const longTitle = 'A'.repeat(80);

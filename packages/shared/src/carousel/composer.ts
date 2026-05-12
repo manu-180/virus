@@ -27,6 +27,15 @@ const SLIDE_HEIGHT = 1350;
 export async function composeSlide(args: ComposeSlideArgs): Promise<Buffer> {
   const { baseImage, slide, preset } = args;
 
+  // Defense-in-depth: refuse to compose a slide with an empty headline.
+  // Without this, Satori would happily render the layout with an empty <div>
+  // for the title — producing a PNG with a visible overlay block but no text,
+  // marked status='ready' downstream. That's the silent-failure class of bug
+  // this guard exists to surface.
+  if (!slide.headline || slide.headline.trim().length === 0) {
+    throw new Error(`compose_empty_headline:slide-${slide.idx}`);
+  }
+
   const fonts = await loadFonts();
   const overrides = getLayoutForRole(slide.role, preset, slide.body);
 
