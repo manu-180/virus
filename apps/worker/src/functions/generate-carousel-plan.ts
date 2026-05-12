@@ -19,6 +19,7 @@
  * On total failure: onFailure sets carousel status='failed' and records the error.
  */
 
+import { z } from 'zod';
 import { inngest } from '../inngest/index.js';
 import { getAdminClient } from '../lib/supabase.js';
 import { withQuota } from '../lib/quotas.js';
@@ -28,6 +29,15 @@ import { buildSlidePlanPrompt } from '@virus/shared/carousel';
 import { SlideSpecArraySchema } from '@virus/shared/carousel';
 import type { CarouselBrief, SlideSpec } from '@virus/shared/carousel';
 import type { ProjectBrand } from '@virus/shared/viral';
+
+// SlideSpec schema limits (kept in sync with packages/shared/src/carousel/types.ts).
+// We sanitize Claude's raw output to these limits BEFORE Zod validation — LLMs
+// routinely over-shoot string maximums and that should not blow up the whole
+// carousel. The composer truncates to the same or larger values, so trimming
+// here is safe.
+const MAX_HEADLINE = 60;
+const MAX_BODY = 140;
+const VALID_ROLES = ['hook', 'problem', 'insight', 'data', 'example', 'cta'] as const;
 
 // ---------------------------------------------------------------------------
 // DB row shapes
@@ -94,6 +104,65 @@ function parseBrief(
   };
 }
 
+function cleanSpec(s: {
+  idx: number;
+  role: SlideSpec['role'];
+  headline: string;
+  body?: string | undefined;
+  visualPrompt: string;
+}): SlideSpec {
+  const spec: SlideSpec = { idx: s.idx, role: s.role, headline: s.headline, visualPrompt: s.visualPrompt };
+  if (s.body !== undefined) spec.body = s.body;
+  return spec;
+}
+
+// Strip markdown fences in case Claude wraps the JSON in ```json ... ``` despite
+// the "JSON-only" system prompt — it happens occasionally and is recoverable.
+function stripJsonFences(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('```')) return trimmed;
+  return trimmed.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+}
+
+// Coerce LLM output to the shape Zod expects. LLMs routinely over-shoot string
+// limits and occasionally pick a role outside the enum; we'd rather render a
+// slightly-trimmed slide than fail the whole carousel.
+function sanitizeRawSpecs(raw: unknown): unknown {
+  if (!Array.isArray(raw)) return raw;
+  return raw.map((item: unknown, fallbackIdx: number) => {
+    if (typeof item !== 'object' || item === null) return item;
+    const r = item as Record<string, unknown>;
+    const result: Record<string, unknown> = {};
+
+    result.idx = typeof r.idx === 'number' ? Math.floor(r.idx) : fallbackIdx;
+
+    result.role =
+      typeof r.role === 'string' && (VALID_ROLES as readonly string[]).includes(r.role)
+        ? r.role
+        : 'insight';
+
+    const headline = typeof r.headline === 'string' ? r.headline.trim() : '';
+    result.headline = headline.length > MAX_HEADLINE ? headline.slice(0, MAX_HEADLINE) : headline;
+
+    if (typeof r.body === 'string') {
+      const body = r.body.trim();
+      if (body.length > 0) {
+        result.body = body.length > MAX_BODY ? body.slice(0, MAX_BODY) : body;
+      }
+    }
+
+    result.visualPrompt = typeof r.visualPrompt === 'string' ? r.visualPrompt.trim() : '';
+
+    return result;
+  });
+}
+
+function formatZodError(err: z.ZodError): string {
+  return err.issues
+    .map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`)
+    .join('; ');
+}
+
 async function callClaudeForSlidePlan(
   prompt: string,
   slideCount: number,
@@ -107,31 +176,53 @@ async function callClaudeForSlidePlan(
 
   const raw = result.text ?? '';
 
-  function cleanSpec(s: { idx: number; role: SlideSpec['role']; headline: string; body?: string | undefined; visualPrompt: string }): SlideSpec {
-    const spec: SlideSpec = { idx: s.idx, role: s.role, headline: s.headline, visualPrompt: s.visualPrompt };
-    if (s.body !== undefined) spec.body = s.body;
-    return spec;
+  let firstError: string;
+  try {
+    const rawJson = JSON.parse(stripJsonFences(raw));
+    const sanitized = sanitizeRawSpecs(rawJson);
+    const parsed = SlideSpecArraySchema.parse(sanitized);
+    return parsed.map(cleanSpec);
+  } catch (err) {
+    firstError =
+      err instanceof z.ZodError
+        ? `Zod validation failed: ${formatZodError(err)}`
+        : err instanceof Error
+          ? `JSON parse failed: ${err.message}`
+          : 'invalid response';
+    console.warn(JSON.stringify({
+      fn: 'generate-carousel-plan',
+      step: 'plan-slides',
+      attempt: 1,
+      error: firstError,
+    }));
   }
 
-  try {
-    const parsed = SlideSpecArraySchema.parse(JSON.parse(raw));
-    return parsed.map(cleanSpec);
-  } catch {
-    // One retry: ask Claude to fix the JSON
-    const fixResult = await callClaude({
-      model: MODELS.default,
-      system: 'You are a JSON-only responder. Fix the provided JSON and return only the corrected array.',
-      messages: [
-        { role: 'user', content: prompt },
-        { role: 'assistant', content: raw },
-        { role: 'user', content: `The JSON above is invalid. Fix it and return only the corrected JSON array of ${slideCount} SlideSpec objects.` },
-      ],
-      maxTokens: 200 * slideCount + 400,
-    });
-    const fixedRaw = fixResult.text ?? '';
-    const fixedParsed = SlideSpecArraySchema.parse(JSON.parse(fixedRaw));
-    return fixedParsed.map(cleanSpec);
-  }
+  // One retry — surface the SPECIFIC error so Claude can fix the right thing
+  // (the previous version sent a generic "fix this" message and Claude would
+  // often regenerate the same too-long body).
+  const fixResult = await callClaude({
+    model: MODELS.default,
+    system: 'You are a JSON-only responder. Fix the provided JSON to satisfy the constraints. Output only the corrected JSON array, no markdown, no text.',
+    messages: [
+      { role: 'user', content: prompt },
+      { role: 'assistant', content: raw },
+      {
+        role: 'user',
+        content:
+          `The JSON above failed validation with this error:\n${firstError}\n\n` +
+          `Return the corrected JSON array of ${slideCount} SlideSpec objects. ` +
+          `STRICT LIMITS: headline ≤ ${MAX_HEADLINE} chars, body ≤ ${MAX_BODY} chars, ` +
+          `role must be one of: ${VALID_ROLES.join(', ')}. ` +
+          `Count characters before responding. No markdown.`,
+      },
+    ],
+    maxTokens: 200 * slideCount + 400,
+  });
+  const fixedRaw = fixResult.text ?? '';
+  const fixedJson = JSON.parse(stripJsonFences(fixedRaw));
+  const fixedSanitized = sanitizeRawSpecs(fixedJson);
+  const fixedParsed = SlideSpecArraySchema.parse(fixedSanitized);
+  return fixedParsed.map(cleanSpec);
 }
 
 // ---------------------------------------------------------------------------

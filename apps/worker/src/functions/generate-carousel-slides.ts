@@ -246,12 +246,16 @@ export const generateCarouselSlides = inngest.createFunction(
         carouselId,
         supabase: db,
         onSlideDone: async (idx, success) => {
-          // Update DB inline — upsert is idempotent on retry
+          // Update DB inline — upsert is idempotent on retry.
+          // status stays 'generating' here — only compose-carousel-overlay flips
+          // it to 'ready' once the text overlay is composited. Marking 'ready'
+          // here would let the gallery treat the bare base image (no text) as
+          // a finished slide.
           const { error: updateErr } = await db
             .from('carousel_slides')
             .update({
               image_path: success.path,
-              status: 'ready',
+              status: 'generating',
               error: null,
             })
             .eq('carousel_id', carouselId)
