@@ -201,10 +201,31 @@ export const regenerateCarouselSlide = inngest.createFunction(
     });
 
     // ------------------------------------------------------------------
-    // 3. Generate new base image
+    // 3. Generate new base image — when regenerating a non-anchor slide,
+    //    download the existing anchor image (slide 0) and pass it as the
+    //    visual reference so the regenerated slide stays consistent with the
+    //    rest of the carousel (same character, palette, mood). If the anchor
+    //    image isn't available yet (e.g. user is regenerating slide 0 itself
+    //    or slide 0 hasn't been produced), fall back to text-only generation.
     // ------------------------------------------------------------------
     const imagePath = await step.run('generate-image', async () => {
       const db = getAdminClient();
+
+      let referenceImage: Buffer | undefined;
+      if (idx !== 0) {
+        const anchorPath = `${userId}/${carouselId}/slide-0.png`;
+        try {
+          const { data, error: dlErr } = await db.storage
+            .from('carousels')
+            .download(anchorPath);
+          if (!dlErr && data) {
+            referenceImage = Buffer.from(await data.arrayBuffer());
+          }
+        } catch {
+          // Non-fatal: missing anchor just means no visual continuity for this
+          // regenerated slide. We still want to produce something for the user.
+        }
+      }
 
       const result = await generateCarouselSlideImage({
         brief,
@@ -213,6 +234,7 @@ export const regenerateCarouselSlide = inngest.createFunction(
         userId,
         carouselId,
         supabase: db,
+        ...(referenceImage ? { referenceImage } : {}),
       });
 
       await db
@@ -258,7 +280,7 @@ export const regenerateCarouselSlide = inngest.createFunction(
 
       await db
         .from('carousel_slides')
-        .update({ composed_path: composedPath, status: 'done', error: null })
+        .update({ composed_path: composedPath, status: 'ready', error: null })
         .eq('carousel_id', carouselId)
         .eq('idx', idx);
 

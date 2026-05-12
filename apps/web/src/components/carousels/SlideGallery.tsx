@@ -46,23 +46,38 @@ export function SlideGallery({
 }: SlideGalleryProps) {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  // Cache key = "path@updated_at" so that a re-generated slide (same storage path,
+  // new file content) gets a fresh signed URL after the DB row's updated_at changes.
   const fetchedRef = useRef(new Set<string>());
 
-  // Fetch signed URLs for paths not yet fetched
+  // Fetch signed URLs for paths not yet fetched (or whose slide was updated).
   useEffect(() => {
-    const missing: string[] = [];
-    for (const slide of slides) {
-      if (slide.composed_path && !fetchedRef.current.has(slide.composed_path))
-        missing.push(slide.composed_path);
-      if (slide.image_path && !fetchedRef.current.has(slide.image_path))
-        missing.push(slide.image_path);
-    }
-    if (missing.length === 0) return;
+    const toFetch: string[] = [];
+    const vKeys: string[] = [];
 
-    missing.forEach((p) => fetchedRef.current.add(p));
+    for (const slide of slides) {
+      const v = slide.updated_at ?? '';
+      if (slide.composed_path) {
+        const vk = `${slide.composed_path}@${v}`;
+        if (!fetchedRef.current.has(vk)) {
+          toFetch.push(slide.composed_path);
+          vKeys.push(vk);
+        }
+      }
+      if (slide.image_path) {
+        const vk = `${slide.image_path}@${v}`;
+        if (!fetchedRef.current.has(vk)) {
+          toFetch.push(slide.image_path);
+          vKeys.push(vk);
+        }
+      }
+    }
+    if (toFetch.length === 0) return;
+
+    vKeys.forEach((vk) => fetchedRef.current.add(vk));
 
     const params = new URLSearchParams();
-    missing.forEach((p) => params.append('p', p));
+    toFetch.forEach((p) => params.append('p', p));
 
     fetch(`/api/carousels/${carouselId}/slides/signed-urls?${params.toString()}`)
       .then((res) => (res.ok ? res.json() : null))
@@ -73,7 +88,7 @@ export function SlideGallery({
       })
       .catch(() => {
         // Remove from fetched set so they can be retried next render
-        missing.forEach((p) => fetchedRef.current.delete(p));
+        vKeys.forEach((vk) => fetchedRef.current.delete(vk));
       });
   }, [slides, carouselId]);
 
@@ -89,7 +104,7 @@ export function SlideGallery({
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
         {slots.map((slide, i) => {
-          const isDone = slide?.status === 'done';
+          const isDone = slide?.status === 'ready';
           const isFailed = slide?.status === 'failed';
           const isRegenerating =
             slide?.status === 'pending' || slide?.status === 'generating';

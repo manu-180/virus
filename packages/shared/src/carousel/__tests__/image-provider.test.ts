@@ -253,6 +253,83 @@ describe('generateCarouselSlideImage', () => {
       }),
     ).rejects.toMatchObject({ message: 'bucket not found' });
   });
+
+  // --- Reference image / image-to-image propagation ---
+
+  it('propagates the referenceImage to generateImageGemini when provided', async () => {
+    vi.mocked(generateImageGemini).mockResolvedValue({
+      bytes: fakeImageBuffer,
+      width: 1080,
+      height: 1350,
+      costUsd: 0.04,
+    });
+
+    const { db } = makeSupabaseMock();
+    const referenceImage = Buffer.from('anchor-png-bytes');
+
+    await generateCarouselSlideImage({
+      brief: mockBrief,
+      slide: mockSlide,
+      brand: mockBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+      referenceImage,
+    });
+
+    expect(generateImageGemini).toHaveBeenCalledWith(
+      expect.objectContaining({ referenceImage }),
+    );
+    // The prompt sent to Gemini should include the reference directive
+    const callArgs = vi.mocked(generateImageGemini).mock.calls[0]?.[0];
+    expect(callArgs?.prompt).toContain('Use the attached image as the canonical visual reference');
+  });
+
+  it('does NOT include the reference directive when no referenceImage is passed', async () => {
+    vi.mocked(generateImageGemini).mockResolvedValue({
+      bytes: fakeImageBuffer,
+      width: 1080,
+      height: 1350,
+      costUsd: 0.04,
+    });
+
+    const { db } = makeSupabaseMock();
+
+    await generateCarouselSlideImage({
+      brief: mockBrief,
+      slide: mockSlide,
+      brand: mockBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+    });
+
+    const callArgs = vi.mocked(generateImageGemini).mock.calls[0]?.[0];
+    expect(callArgs?.prompt ?? '').not.toContain('Use the attached image as the canonical visual reference');
+    expect(callArgs?.referenceImage).toBeUndefined();
+  });
+
+  it('returns the buffer alongside path/bytes/costCents', async () => {
+    vi.mocked(generateImageGemini).mockResolvedValue({
+      bytes: fakeImageBuffer,
+      width: 1080,
+      height: 1350,
+      costUsd: 0.04,
+    });
+
+    const { db } = makeSupabaseMock();
+
+    const result = await generateCarouselSlideImage({
+      brief: mockBrief,
+      slide: mockSlide,
+      brand: mockBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+    });
+
+    expect(result.buffer).toEqual(fakeImageBuffer);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -351,5 +428,180 @@ describe('generateAllSlideImages', () => {
     });
 
     expect(onSlideDone).toHaveBeenCalledTimes(3);
+  });
+
+  // --- Anchor-first chaining ---
+
+  it('generates the hook slide first and passes its buffer as referenceImage to the rest', async () => {
+    const anchorBytes = Buffer.from('ANCHOR-BYTES');
+    const otherBytes = Buffer.from('OTHER-BYTES');
+
+    let callIdx = 0;
+    vi.mocked(generateImageGemini).mockImplementation(async (input) => {
+      callIdx++;
+      // First call: anchor (no reference image).
+      if (callIdx === 1) {
+        expect(input.referenceImage).toBeUndefined();
+        return { bytes: anchorBytes, width: 1080, height: 1350, costUsd: 0.04 };
+      }
+      // Subsequent calls: must receive the anchor buffer as reference.
+      expect(input.referenceImage).toEqual(anchorBytes);
+      return { bytes: otherBytes, width: 1080, height: 1350, costUsd: 0.04 };
+    });
+
+    const slides = makeSlides(5);
+    const { db } = makeSupabaseMock();
+
+    const result = await generateAllSlideImages({
+      brief: mockBrief,
+      slides,
+      brand: mockBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+    });
+
+    expect(result.succeeded).toHaveLength(5);
+    expect(result.failed).toHaveLength(0);
+    expect(generateImageGemini).toHaveBeenCalledTimes(5);
+  });
+
+  it('strips the internal buffer from succeeded results before returning', async () => {
+    vi.mocked(generateImageGemini).mockResolvedValue({
+      bytes: fakeImageBuffer,
+      width: 1080,
+      height: 1350,
+      costUsd: 0.04,
+    });
+
+    const slides = makeSlides(3);
+    const { db } = makeSupabaseMock();
+
+    const result = await generateAllSlideImages({
+      brief: mockBrief,
+      slides,
+      brand: mockBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+    });
+
+    for (const s of result.succeeded) {
+      // `buffer` is intentionally not in the public SlideSuccess type — assert
+      // at runtime that it doesn't leak through.
+      expect((s as unknown as { buffer?: Buffer }).buffer).toBeUndefined();
+    }
+  });
+
+  it('strips the buffer from onSlideDone callbacks too', async () => {
+    vi.mocked(generateImageGemini).mockResolvedValue({
+      bytes: fakeImageBuffer,
+      width: 1080,
+      height: 1350,
+      costUsd: 0.04,
+    });
+
+    const slides = makeSlides(3);
+    const { db } = makeSupabaseMock();
+    const onSlideDone = vi.fn().mockResolvedValue(undefined);
+
+    await generateAllSlideImages({
+      brief: mockBrief,
+      slides,
+      brand: mockBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+      onSlideDone,
+    });
+
+    for (const call of onSlideDone.mock.calls) {
+      const success = call[1] as { buffer?: Buffer };
+      expect(success.buffer).toBeUndefined();
+    }
+  });
+
+  it('degrades gracefully when the anchor fails: rest still generates without referenceImage', async () => {
+    let callIdx = 0;
+    vi.mocked(generateImageGemini).mockImplementation(async (input) => {
+      callIdx++;
+      // First call (anchor) fails.
+      if (callIdx === 1) {
+        throw new Error('gemini_no_image: policy violation on hook');
+      }
+      // All subsequent calls must NOT receive a referenceImage.
+      expect(input.referenceImage).toBeUndefined();
+      return { bytes: fakeImageBuffer, width: 1080, height: 1350, costUsd: 0.04 };
+    });
+
+    const slides = makeSlides(4);
+    const { db } = makeSupabaseMock();
+
+    const result = await generateAllSlideImages({
+      brief: mockBrief,
+      slides,
+      brand: mockBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+    });
+
+    // Anchor failed, the other 3 succeeded.
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]?.idx).toBe(0);
+    expect(result.succeeded).toHaveLength(3);
+  });
+
+  it('treats role=hook as anchor even if not at idx 0', async () => {
+    // Build slides where idx 0 is "problem" and idx 2 is "hook" — pickAnchor
+    // should still grab idx 2 as the anchor.
+    const slides: SlideSpec[] = [
+      { idx: 0, role: 'problem', headline: 'P', visualPrompt: 'p-visual' },
+      { idx: 1, role: 'insight', headline: 'I', visualPrompt: 'i-visual' },
+      { idx: 2, role: 'hook', headline: 'H', visualPrompt: 'h-visual' },
+      { idx: 3, role: 'cta', headline: 'C', visualPrompt: 'c-visual' },
+    ];
+
+    let callIdx = 0;
+    vi.mocked(generateImageGemini).mockImplementation(async (input) => {
+      callIdx++;
+      if (callIdx === 1) {
+        // Anchor must be the hook (h-visual)
+        expect(input.prompt).toContain('h-visual');
+        expect(input.referenceImage).toBeUndefined();
+        return { bytes: fakeImageBuffer, width: 1080, height: 1350, costUsd: 0.04 };
+      }
+      // Rest must receive a reference image
+      expect(input.referenceImage).toBeDefined();
+      return { bytes: fakeImageBuffer, width: 1080, height: 1350, costUsd: 0.04 };
+    });
+
+    const { db } = makeSupabaseMock();
+
+    const result = await generateAllSlideImages({
+      brief: mockBrief,
+      slides,
+      brand: mockBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+    });
+
+    expect(result.succeeded).toHaveLength(4);
+  });
+
+  it('handles an empty slides array without throwing', async () => {
+    const { db } = makeSupabaseMock();
+    const result = await generateAllSlideImages({
+      brief: mockBrief,
+      slides: [],
+      brand: mockBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+    });
+    expect(result.succeeded).toEqual([]);
+    expect(result.failed).toEqual([]);
+    expect(generateImageGemini).not.toHaveBeenCalled();
   });
 });

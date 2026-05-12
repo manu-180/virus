@@ -60,3 +60,6 @@ next-env.d.ts
 
 # Carousel sample output
 tmp-carousel-samples/
+
+# Claude Code internal session data
+.claude/

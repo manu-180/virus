@@ -15,6 +15,16 @@ export interface GeminiGenInput {
   themeColor: string;
   /** Aspect ratio. Default `9:16` for vertical short-form. `4:5` for IG carousel. */
   aspectRatio?: '9:16' | '4:5' | '1:1';
+  /**
+   * Optional reference image bytes for image-to-image generation. When
+   * provided, Nano Banana receives it as the first part of the prompt and
+   * uses it as a visual anchor (character, palette, mood). This is what makes
+   * a carousel of N slides feel like one continuous visual story instead of
+   * N independent images. See {@link generateCarouselSlideImage}.
+   */
+  referenceImage?: Buffer;
+  /** MIME type of the reference image. Default `image/png`. */
+  referenceImageMimeType?: string;
 }
 
 /** Successful Gemini image generation result. */
@@ -64,9 +74,30 @@ export async function generateImageGemini(input: GeminiGenInput): Promise<Gemini
     `${input.prompt}\n\n` +
     `Render as a ${aspectRatio === '1:1' ? 'square' : 'vertical'} ${aspectRatio} (${dims[0]}x${dims[1]}) composition.`;
 
+  // Image-to-image: when a reference image is supplied, send it as the first
+  // part so Nano Banana treats it as the visual anchor and the text as the
+  // variation instruction. Order matters here — reference image first, prompt
+  // second is the SDK's documented pattern for "edit / vary this image".
+  const contents = input.referenceImage
+    ? [
+        {
+          role: 'user' as const,
+          parts: [
+            {
+              inlineData: {
+                mimeType: input.referenceImageMimeType ?? 'image/png',
+                data: input.referenceImage.toString('base64'),
+              },
+            },
+            { text: promptWithAspect },
+          ],
+        },
+      ]
+    : promptWithAspect;
+
   const response = await ai.models.generateContent({
     model,
-    contents: promptWithAspect,
+    contents,
     config: {
       // Tell the model we want an image back, not text.
       responseModalities: ['IMAGE'],

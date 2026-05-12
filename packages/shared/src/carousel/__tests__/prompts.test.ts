@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildCaptionPrompt, buildCaptionSystemPrompt, buildVisualPrompt } from '../prompts.js';
+import {
+  buildCaptionPrompt,
+  buildCaptionSystemPrompt,
+  buildSlidePlanPrompt,
+  buildVisualPrompt,
+} from '../prompts.js';
 import type { CarouselBrief, SlideSpec } from '../types.js';
 import type { ProjectBrand } from '../../viral/types.js';
 
@@ -190,6 +195,107 @@ describe('buildVisualPrompt', () => {
   it('includes preset-specific mood for bold', () => {
     const prompt = buildVisualPrompt(slide, 'bold', mockBrand);
     expect(prompt).toContain('high contrast');
+  });
+
+  // --- Role-specific mood layer ---
+
+  it('hook slide gets the cinematic-opening mood layer', () => {
+    const hookSlide: SlideSpec = { ...slide, role: 'hook' };
+    const prompt = buildVisualPrompt(hookSlide, 'bold', mockBrand);
+    expect(prompt.toLowerCase()).toContain('cinematic opening');
+    expect(prompt.toLowerCase()).toContain('stopping power');
+  });
+
+  it('cta slide gets the loop-closure mood layer', () => {
+    const ctaSlide: SlideSpec = { ...slide, role: 'cta', headline: 'Seguinos' };
+    const prompt = buildVisualPrompt(ctaSlide, 'bold', mockBrand);
+    expect(prompt.toLowerCase()).toContain('closing shot');
+    expect(prompt.toLowerCase()).toContain('mirrors the opening');
+  });
+
+  it('non-hook/non-cta slides do not get the role-mood layer', () => {
+    const insightSlide: SlideSpec = { ...slide, role: 'insight' };
+    const prompt = buildVisualPrompt(insightSlide, 'bold', mockBrand);
+    expect(prompt.toLowerCase()).not.toContain('cinematic opening');
+    expect(prompt.toLowerCase()).not.toContain('closing shot');
+  });
+
+  // --- Reference-image / image-to-image directive ---
+
+  it('emits the reference-image directive when hasReferenceImage is true', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', mockBrand, { hasReferenceImage: true });
+    expect(prompt).toContain('Use the attached image as the canonical visual reference');
+    expect(prompt.toLowerCase()).toContain('same character');
+  });
+
+  it('omits the reference-image directive when no reference is attached', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', mockBrand, { hasReferenceImage: false });
+    expect(prompt).not.toContain('Use the attached image as the canonical visual reference');
+  });
+
+  it('accepts a plain-string topic for backwards compatibility', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', mockBrand, 'Crecer en IG sin pagar ads');
+    expect(prompt).toContain('Crecer en IG sin pagar ads');
+  });
+
+  it('options form supports both topic and hasReferenceImage together', () => {
+    const prompt = buildVisualPrompt(slide, 'bold', mockBrand, {
+      topic: 'Crecer en IG',
+      hasReferenceImage: true,
+    });
+    expect(prompt).toContain('Crecer en IG');
+    expect(prompt).toContain('Use the attached image as the canonical visual reference');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildSlidePlanPrompt — narrative arc + swipe baits
+// ---------------------------------------------------------------------------
+
+describe('buildSlidePlanPrompt — narrative arc', () => {
+  const brief: CarouselBrief = {
+    topic: 'Por qué tu sitio web no vende',
+    angle: 'contrarian',
+    tone: 'direct',
+    audience: 'dueños de negocios',
+    slideCount: 6,
+    stylePreset: 'bold',
+    language: 'es',
+    cta: 'Guardalo para cuando lo necesites',
+  };
+
+  it('teaches the 3-act structure explicitly', () => {
+    const prompt = buildSlidePlanPrompt(brief, mockBrand);
+    expect(prompt).toContain('ACTO 1');
+    expect(prompt).toContain('ACTO 2');
+    expect(prompt).toContain('ACTO 3');
+  });
+
+  it('requires swipe-baits at the end of intermediate-slide bodies', () => {
+    const prompt = buildSlidePlanPrompt(brief, mockBrand);
+    expect(prompt.toLowerCase()).toContain('swipe-bait');
+  });
+
+  it('pins slide 0 to "hook" and last slide to "cta"', () => {
+    const prompt = buildSlidePlanPrompt(brief, mockBrand);
+    expect(prompt).toMatch(/slide 0\.role === "hook"/);
+    expect(prompt).toMatch(/slide 5\.role === "cta"/);
+  });
+
+  it('asks for visual continuity across slides (anchor-aware)', () => {
+    const prompt = buildSlidePlanPrompt(brief, mockBrand);
+    expect(prompt.toLowerCase()).toContain('continuidad visual');
+    expect(prompt.toLowerCase()).toContain('ancla');
+  });
+
+  it('asks for loop closure on the final slide', () => {
+    const prompt = buildSlidePlanPrompt(brief, mockBrand);
+    expect(prompt.toLowerCase()).toContain('loop closure');
+  });
+
+  it('uses the slideCount to compute the lastIdx in instructions', () => {
+    const prompt8 = buildSlidePlanPrompt({ ...brief, slideCount: 8 }, mockBrand);
+    expect(prompt8).toMatch(/slide 7\.role === "cta"/);
   });
 });
 

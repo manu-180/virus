@@ -51,12 +51,28 @@ export interface GenerateCarouselSlideImageArgs {
   userId: string;
   carouselId: string;
   supabase: SupabaseClient;
+  /**
+   * Optional reference image (bytes) used for image-to-image generation. When
+   * provided, the prompt is reshaped to instruct the model to keep the
+   * SAME character/setting/palette as the reference and only vary the action
+   * or framing described in this slide's visualPrompt. This is how the batch
+   * pipeline propagates the slide-0 "anchor" image into every later slide so
+   * the whole carousel reads as one continuous visual story.
+   */
+  referenceImage?: Buffer;
 }
 
 export interface SlideImageResult {
   path: string;
   bytes: number;
   costCents: number;
+  /**
+   * Raw image buffer. The batch pipeline uses this to pass the anchor slide
+   * (slide 0 / hook) as a reference image to subsequent slides without a
+   * Storage round-trip. Strip this before returning to callers that don't
+   * need it — it can be tens to hundreds of KB per slide.
+   */
+  buffer?: Buffer;
 }
 
 /**
@@ -71,11 +87,14 @@ export interface SlideImageResult {
 export async function generateCarouselSlideImage(
   args: GenerateCarouselSlideImageArgs,
 ): Promise<SlideImageResult> {
-  const { brief, slide, brand, userId, carouselId, supabase } = args;
+  const { brief, slide, brand, userId, carouselId, supabase, referenceImage } = args;
 
-  const prompt = buildVisualPrompt(slide, brief.stylePreset, brand);
+  const prompt = buildVisualPrompt(slide, brief.stylePreset, brand, {
+    topic: brief.topic,
+    hasReferenceImage: referenceImage != null,
+  });
 
-  const imageBytes = await generateWithRetry(prompt);
+  const imageBytes = await generateWithRetry(prompt, referenceImage);
 
   const path = `${userId}/${carouselId}/slide-${slide.idx}.png`;
 
@@ -87,12 +106,12 @@ export async function generateCarouselSlideImage(
 
   const costCents = Math.round(GEMINI_BATCH_USD_PER_IMAGE * 10_000) / 100;
 
-  return { path, bytes: imageBytes.length, costCents };
+  return { path, bytes: imageBytes.length, costCents, buffer: imageBytes };
 }
 
 // Wraps generateImageGemini with retry-on-rate-limit and translation of
 // terminal errors into CarouselSafetyBlockedError / CarouselRateLimitError.
-async function generateWithRetry(prompt: string): Promise<Buffer> {
+async function generateWithRetry(prompt: string, referenceImage?: Buffer): Promise<Buffer> {
   let lastRateLimitMessage = '';
 
   for (let attempt = 0; attempt <= RATE_LIMIT_MAX_RETRIES; attempt++) {
@@ -101,6 +120,7 @@ async function generateWithRetry(prompt: string): Promise<Buffer> {
         prompt,
         themeColor: '#000000',
         aspectRatio: '4:5',
+        ...(referenceImage ? { referenceImage } : {}),
       });
       return result.bytes;
     } catch (err) {
