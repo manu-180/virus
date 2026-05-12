@@ -10,10 +10,23 @@ async function requireUser() {
   return user;
 }
 
+// Cap the user-provided hint to keep the LLM/image prompt bounded and prevent
+// abuse. 240 chars is enough for things like "más oscuro, sin manos, paleta
+// más fría" without giving room for a prompt-injection essay.
+const MAX_HINT_LEN = 240;
+
+function sanitizeHint(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed.slice(0, MAX_HINT_LEN);
+}
+
 // POST /api/carousels/[id]/slides/[idx]/regenerate
+// Body (optional): { hint?: string }  — free-form steer for the new image.
 // Marks the slide as pending and dispatches a regeneration Inngest event.
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string; idx: string }> },
 ) {
   try {
@@ -22,6 +35,16 @@ export async function POST(
 
     if (isNaN(idx) || idx < 0) {
       return NextResponse.json({ error: 'invalid_idx' }, { status: 400 });
+    }
+
+    // Body is optional — older callers POST without one. Tolerate any
+    // parse/content-type error and treat as "no hint".
+    let hint: string | undefined;
+    try {
+      const body = (await req.json()) as { hint?: unknown };
+      hint = sanitizeHint(body?.hint);
+    } catch {
+      hint = undefined;
     }
 
     const user = await requireUser();
@@ -65,7 +88,12 @@ export async function POST(
     // Dispatch Inngest event
     await inngest.send({
       name: 'virus/carousel.slide.regenerate.requested' as never,
-      data: { carouselId: id, userId: user.id, idx },
+      data: {
+        carouselId: id,
+        userId: user.id,
+        idx,
+        ...(hint ? { hint } : {}),
+      },
     });
 
     return NextResponse.json({ ok: true });

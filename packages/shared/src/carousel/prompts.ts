@@ -147,13 +147,13 @@ El carrusel es UNA historia con principio, medio y final. No es una lista de bul
 
 ACTO 1 — Setup (slide 0 y 1)
 - Slide 0 (role: "hook") — abre la historia. Una sola idea, contrarian o sorprendente. Headline ≤ 6 palabras o pregunta corta que pare el scroll. Sin body. Es la portada.
-- Slide 1 (role: "problem") — agita el dolor o nombra la promesa: "esto es lo que vas a aprender" / "esto te pasa si...". Body opcional, 1 oración seca.
+- Slide 1 (role: "problem") — nombra el dolor o la promesa con una oración completa y certera.
 
 ACTO 2 — Confrontación / desarrollo (slides 2 a ${lastIdx - 1})
 - Roles permitidos: "insight" | "data" | "example".
 - Cada slide entrega UN punto concreto. Nunca dos.
-- CADA body de slides intermedios debe terminar con un swipe-bait: una frase incompleta, una pregunta abierta, "pero...", "y acá viene lo interesante...", "el problema real es otro →", un dato sin contexto que el próximo slide cierra. El swipe-bait debe sentirse natural, no forzado.
-- El slide siguiente RESPONDE el bait del anterior. Es una cadena. Hilá los headlines.
+- Cada body es una idea CERRADA: una oración (o dos cortas) que se entiende sola, sin depender del slide siguiente. Profesional, directa, sin clickbait ni frases colgadas.
+- La continuidad entre slides la da el ORDEN de los conceptos (problema → causa → ejemplo → insight), no frases incompletas. Nada de "pero...", "y acá viene lo interesante...", flechas "→", ni puntos suspensivos al final.
 
 ACTO 3 — Resolución (slides ${lastIdx - 1} y ${lastIdx})
 - Slide ${lastIdx - 1} (role: "insight" o "example") — el payoff: la idea principal del carrusel revelada. Es la línea que justifica todo el scroll. Tiene que pegar.
@@ -161,7 +161,7 @@ ACTO 3 — Resolución (slides ${lastIdx - 1} y ${lastIdx})
 
 ## Reglas de texto
 - headline: máximo 60 caracteres. Genera curiosidad sin clickbait — entregá lo prometido.
-- body: máximo 140 caracteres. En slides intermedios debe terminar en swipe-bait (ver Acto 2).
+- body: máximo 160 caracteres. SIEMPRE oraciones completas con punto final. Breve, concisa, certera, profesional. Sin frases colgadas, sin puntos suspensivos finales, sin flechas, sin "pero..." o "y acá viene lo interesante" — eso queda prohibido. Si la idea no entra en 160 caracteres, recortala hasta que entre, no la cortes.
 - Sin emojis decorativos. Máximo 1 emoji solo si suma significado real.
 - Hablá en "vos" (español argentino), nunca en "tú".
 - Si la marca tiene palabras prohibidas (arriba), no aparecen en headlines ni bodies.
@@ -185,7 +185,7 @@ Reglas estrictas del JSON:
 - slide ${lastIdx}.role === "cta" SIEMPRE.
 - slide 1.role === "problem" en lo posible.
 - slides intermedios usan "insight" | "data" | "example".
-- "body" puede omitirse en slide 0; en slides intermedios debe terminar con swipe-bait.
+- "body" puede omitirse en slide 0; en slides intermedios es una oración completa terminada en punto (sin "...", sin flechas, sin frases colgadas).
 Sin texto extra, sin markdown, sin explicaciones. Solo el array JSON.`;
 }
 

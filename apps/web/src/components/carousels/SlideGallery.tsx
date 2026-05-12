@@ -33,7 +33,7 @@ interface SlideGalleryProps {
   carouselId: string;
   slides: CarouselSlideRow[];
   slideCount: number;
-  onRegenerate: (idx: number) => Promise<void>;
+  onRegenerate: (idx: number, hint?: string) => Promise<void>;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -219,8 +219,8 @@ export function SlideGallery({
           signedBaseUrl={
             selectedSlide.image_path ? signedUrls[selectedSlide.image_path] : undefined
           }
-          onRegenerate={async () => {
-            await onRegenerate(selectedIdx);
+          onRegenerate={async (hint) => {
+            await onRegenerate(selectedIdx, hint);
             setSelectedIdx(null);
           }}
           onClose={() => setSelectedIdx(null)}

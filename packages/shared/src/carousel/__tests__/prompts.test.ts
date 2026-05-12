@@ -271,9 +271,15 @@ describe('buildSlidePlanPrompt — narrative arc', () => {
     expect(prompt).toContain('ACTO 3');
   });
 
-  it('requires swipe-baits at the end of intermediate-slide bodies', () => {
+  it('requires intermediate bodies to be complete sentences (no swipe-bait)', () => {
     const prompt = buildSlidePlanPrompt(brief, mockBrand);
-    expect(prompt.toLowerCase()).toContain('swipe-bait');
+    // The previous swipe-bait directive produced bodies cut mid-thought
+    // ("...resolvés y en c", "...se construye antes de"). The new prompt
+    // forbids that pattern explicitly and demands closed, professional
+    // sentences.
+    expect(prompt.toLowerCase()).not.toContain('swipe-bait');
+    expect(prompt).toContain('oraciones completas');
+    expect(prompt).toContain('punto final');
   });
 
   it('pins slide 0 to "hook" and last slide to "cta"', () => {

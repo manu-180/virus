@@ -386,7 +386,7 @@ function buildTextBlock(
 
 function resolveBody(body: string | undefined, overrides: LayoutOverrides): string | null {
   if (overrides.bodyHidden || body == null) return null;
-  return truncate(body, 160);
+  return truncate(body, 180);
 }
 
 function applyCase(text: string, uppercase: boolean): string {
@@ -397,7 +397,26 @@ function emptyDiv(): SatoriNode {
   return { type: 'div', props: { style: { display: 'flex' }, children: [] } };
 }
 
+// Truncate without cutting a word in half. Walks back from `maxLen` to the
+// nearest whitespace and trims trailing punctuation so the line reads as a
+// finished phrase (e.g. "...resolvés y en c" → "...resolvés."). If no
+// whitespace exists in the prefix (rare — one giant word), falls back to a
+// hard slice so we don't return an empty string.
 function truncate(text: string, maxLen: number): string {
-  if (text.length <= maxLen) return text;
-  return text.slice(0, maxLen - 1) + '…';
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLen) return trimmed;
+
+  // Reserve 1 char for the ellipsis.
+  const budget = maxLen - 1;
+  let cut = trimmed.lastIndexOf(' ', budget);
+  if (cut <= 0) cut = budget;
+
+  // Strip trailing punctuation that would read weird before the ellipsis
+  // (commas, dashes, "y", "de", etc. left dangling). We only strip
+  // punctuation here, not whole connective words — that's the AI's job
+  // (see prompts.ts: bodies are now asked to be complete sentences).
+  let result = trimmed.slice(0, cut).replace(/[\s,;:\-–—]+$/u, '');
+  if (result.length === 0) result = trimmed.slice(0, budget);
+
+  return result + '…';
 }

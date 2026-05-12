@@ -18,9 +18,11 @@ interface SlideFullscreenModalProps {
   carouselId: string;
   signedUrl: string | undefined;
   signedBaseUrl: string | undefined;
-  onRegenerate: () => Promise<void>;
+  onRegenerate: (hint?: string) => Promise<void>;
   onClose: () => void;
 }
+
+const MAX_HINT_LEN = 240;
 
 export function SlideFullscreenModal({
   slide,
@@ -33,11 +35,13 @@ export function SlideFullscreenModal({
 }: SlideFullscreenModalProps) {
   const [regenerating, setRegenerating] = useState(false);
   const [downloading, setDownloading] = useState<'composed' | 'base' | null>(null);
+  const [hint, setHint] = useState('');
 
   async function handleRegenerate() {
     setRegenerating(true);
     try {
-      await onRegenerate();
+      const trimmed = hint.trim();
+      await onRegenerate(trimmed.length > 0 ? trimmed : undefined);
     } finally {
       setRegenerating(false);
     }
@@ -111,8 +115,37 @@ export function SlideFullscreenModal({
             </TabsContent>
           </Tabs>
 
+          {/* Hint input — optional steer for the new image */}
+          <div className="mt-4 space-y-1.5">
+            <label
+              htmlFor={`slide-hint-${idx}`}
+              className="block text-[11px] font-medium uppercase tracking-widest text-white/40"
+            >
+              Indicación opcional para la nueva imagen
+            </label>
+            <textarea
+              id={`slide-hint-${idx}`}
+              value={hint}
+              onChange={(e) => setHint(e.target.value.slice(0, MAX_HINT_LEN))}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !regenerating) {
+                  e.preventDefault();
+                  void handleRegenerate();
+                }
+              }}
+              placeholder='ej. "más oscuro", "sin manos en cuadro", "paleta más fría"'
+              rows={2}
+              maxLength={MAX_HINT_LEN}
+              disabled={regenerating}
+              className="w-full resize-none rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/20 disabled:opacity-50"
+            />
+            <p className="text-[10px] text-white/30 text-right tabular-nums">
+              {hint.length}/{MAX_HINT_LEN}
+            </p>
+          </div>
+
           {/* Actions */}
-          <div className="flex flex-wrap items-center gap-3 mt-4">
+          <div className="flex flex-wrap items-center gap-3 mt-1">
             <button
               type="button"
               onClick={handleRegenerate}

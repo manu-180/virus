@@ -76,6 +76,12 @@ export interface CarouselSlideRegenerateRequestedEvent {
     carouselId: string;
     userId: string;
     idx: number;
+    /**
+     * Optional free-form hint the user typed in the regenerate UI to steer
+     * the new image — e.g. "más colorido", "sin manos", "más oscuro".
+     * Empty / missing means a plain regenerate with no extra direction.
+     */
+    hint?: string;
   };
 }
 

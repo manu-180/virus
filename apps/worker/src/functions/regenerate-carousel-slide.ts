@@ -135,8 +135,17 @@ export const regenerateCarouselSlide = inngest.createFunction(
   { event: 'virus/carousel.slide.regenerate.requested' },
   async ({ event, step }) => {
     const { carouselId, userId, idx } = event.data;
+    // `hint` is optional on the event; older callers may not send it.
+    const hint = typeof (event.data as { hint?: unknown }).hint === 'string'
+      ? ((event.data as { hint: string }).hint).trim()
+      : '';
 
-    console.log(JSON.stringify({ fn: 'regenerate-carousel-slide', step: 'start', carouselId, userId, idx }));
+    console.log(JSON.stringify({
+      fn: 'regenerate-carousel-slide',
+      step: 'start',
+      carouselId, userId, idx,
+      hasHint: hint.length > 0,
+    }));
 
     // ------------------------------------------------------------------
     // 1. Mark as generating
@@ -239,9 +248,18 @@ export const regenerateCarouselSlide = inngest.createFunction(
         }
       }
 
+      // When the user provided a hint ("más oscuro", "sin manos", …) we
+      // append it to the slide's existing visualPrompt as an explicit
+      // user-direction clause. We don't replace the visualPrompt: the
+      // original keeps the brand/role context, and the hint biases the
+      // model on top.
+      const slideForImage: SlideSpec = hint
+        ? { ...slideSpec, visualPrompt: `${slideSpec.visualPrompt}. User direction: ${hint}` }
+        : slideSpec;
+
       const result = await generateCarouselSlideImage({
         brief,
-        slide: slideSpec,
+        slide: slideForImage,
         brand,
         userId,
         carouselId,

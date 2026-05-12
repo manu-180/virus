@@ -1,12 +1,14 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { join, dirname } from 'node:path';
+// Markdown seeds are imported as raw strings via the `?raw` query.
+// Webpack (Next.js) is configured to handle this via `asset/source` (see
+// apps/web/next.config.ts). Vitest handles it natively (Vite feature).
+// This avoids `readFileSync` at module-eval, which crashes in the Railway
+// standalone bundle because the .md files aren't traced into the deployed
+// image — and crashing here brings down every route that transitively
+// imports this module (e.g. /api/projects/[id]).
 import patternsJson from './apex-dev/patterns.json';
 import brandJson from './apex-dev/brand.json';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const samplePatternsMd = readFileSync(join(__dirname, 'apex-dev/sample-patterns.md'), 'utf-8');
-const sampleBrandMd = readFileSync(join(__dirname, 'apex-dev/sample-brand.md'), 'utf-8');
+import samplePatternsMd from './apex-dev/sample-patterns.md?raw';
+import sampleBrandMd from './apex-dev/sample-brand.md?raw';
 import type { ProjectPatterns, ProjectBrand } from '../types.js';
 
 export interface SeedProject {
