@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     let query = (supabase as AnyTable)
       .from('ig_accounts')
       .select(
-        'id, project_id, ig_username, display_name, status, session_updated_at, last_post_at, post_count_24h, daily_post_limit, last_error',
+        'id, project_id, ig_username, display_name, status, auth_type, session_updated_at, last_post_at, post_count_24h, daily_post_limit, last_error, graph_token_expires_at',
       )
       .eq('user_id', user.id)
       .is('deleted_at', null)

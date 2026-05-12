@@ -17,3 +17,4 @@ export { generateCarouselCaption } from './generate-carousel-caption.js';
 export { regenerateCarouselSlide } from './regenerate-carousel-slide.js';
 export { handleCarouselFailure } from './handle-carousel-failure.js';
 export { publishCarouselToInstagram } from './publish-carousel-to-instagram.js';
+export { refreshIgGraphTokens } from './refresh-ig-graph-tokens.js';
