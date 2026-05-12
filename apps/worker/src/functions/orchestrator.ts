@@ -16,3 +16,4 @@ export { composeCarouselOverlay } from './compose-carousel-overlay.js';
 export { generateCarouselCaption } from './generate-carousel-caption.js';
 export { regenerateCarouselSlide } from './regenerate-carousel-slide.js';
 export { handleCarouselFailure } from './handle-carousel-failure.js';
+export { publishCarouselToInstagram } from './publish-carousel-to-instagram.js';

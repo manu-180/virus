@@ -85,6 +85,21 @@ export interface CarouselSlideRegenerateRequestedEvent {
   };
 }
 
+/**
+ * Fan-out event from the web layer when the user clicks "Publish to Instagram".
+ * The publish function calls the external Python publisher on Railway and
+ * updates the matching ig_publications row through its lifecycle.
+ */
+export interface CarouselPublishRequestedEvent {
+  name: 'virus/carousel.publish.requested';
+  data: {
+    publicationId: string;
+    carouselId: string;
+    igAccountId: string;
+    userId: string;
+  };
+}
+
 export type CarouselEvents = {
   'virus/carousel.created': CarouselCreatedEvent;
   'virus/carousel.slides.requested': CarouselSlidesRequestedEvent;
@@ -94,4 +109,5 @@ export type CarouselEvents = {
   'virus/carousel.failed': CarouselFailedEvent;
   'virus/carousel.completed': CarouselCompletedEvent;
   'virus/carousel.slide.regenerate.requested': CarouselSlideRegenerateRequestedEvent;
+  'virus/carousel.publish.requested': CarouselPublishRequestedEvent;
 };

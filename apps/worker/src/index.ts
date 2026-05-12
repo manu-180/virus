@@ -22,6 +22,7 @@ import {
   composeCarouselOverlay,
   regenerateCarouselSlide,
   handleCarouselFailure,
+  publishCarouselToInstagram,
 } from './functions/orchestrator.js';
 import { detectTrends } from './functions/detect-trends.js';
 import { generateVideoProjectAware } from './functions/generate-video-project-aware.js';
@@ -45,6 +46,7 @@ export {
   composeCarouselOverlay,
   regenerateCarouselSlide,
   handleCarouselFailure,
+  publishCarouselToInstagram,
   sweepStuckCarousels,
 };
 
@@ -66,5 +68,6 @@ export const functions = [
   composeCarouselOverlay,
   regenerateCarouselSlide,
   handleCarouselFailure,
+  publishCarouselToInstagram,
   sweepStuckCarousels,
 ] as const;

@@ -81,6 +81,8 @@ export function NewCarouselForm({ projects }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
+  const sortedProjects = [...projects].sort((a, b) => a.name.localeCompare(b.name));
+
   // Topic seleccionado del combobox (vive aparte del form). Se manda como
   // `selectedTopicId` al POST. El server lo usa para linkear variantes
   // editadas con su seed original (parent_topic_id). Se resetea al cambiar
@@ -102,7 +104,7 @@ export function NewCarouselForm({ projects }: Props) {
   } = useForm<FormData>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
-      projectId: projects[0]?.id ?? '',
+      projectId: sortedProjects[0]?.id ?? '',
       topic: '',
       angle: 'educational',
       tone: 'direct',
@@ -211,12 +213,12 @@ export function NewCarouselForm({ projects }: Props) {
                   <SelectTrigger id="projectId" className="w-full">
                     <SelectValue placeholder="Elegí un proyecto">
                       {(value) =>
-                        projects.find((p) => p.id === value)?.name ?? 'Elegí un proyecto'
+                        sortedProjects.find((p) => p.id === value)?.name ?? 'Elegí un proyecto'
                       }
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {projects.map((p) => (
+                    {sortedProjects.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
                         {p.name}
                       </SelectItem>

@@ -14,6 +14,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
 import { UsageBadge } from './UsageBadge';
+import { cn } from '@/lib/utils';
 import type {
   CarouselTopicItem,
   ProjectTopicsResponse,
@@ -25,26 +26,9 @@ import type {
 
 interface Props {
   projectId: string;
-  /** Texto actual del tema (controlled). */
   value: string;
-  /** Callback cuando cambia el texto, sea por elegir item o por escribir. */
   onChange: (text: string) => void;
-  /**
-   * Callback cuando el usuario explícitamente eligió un topic existente.
-   * Se llama con null si limpia la selección o tipea algo que no existe.
-   * El padre lo usa para enviar selectedTopicId al POST /api/carousels.
-   *
-   * IMPORTANTE: el contrato es "el último topic elegido del dropdown".
-   * Si después el usuario edita el textarea, selectedTopicId queda igual
-   * y el server detecta el diff (texto != title del topic) → crea variante
-   * con parent_topic_id = selectedTopicId.
-   */
   onSelectTopic: (topic: CarouselTopicItem | null) => void;
-  /**
-   * Callback opcional que recibe el mapa de usage (angle/tone) cuando se
-   * recargan los topics. El padre lo usa para mostrar badges en los
-   * Selects de Ángulo/Tono.
-   */
   onUsageLoaded?: (usage: ProjectTopicsResponse['usage']) => void;
   placeholder?: string;
   errorMessage?: string | undefined;
@@ -67,8 +51,17 @@ export function TopicCombobox({
   const [topics, setTopics] = useState<CarouselTopicItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const onUsageLoadedRef = useRef(onUsageLoaded);
   onUsageLoadedRef.current = onUsageLoaded;
+
+  // Foco en el textarea al abrir
+  useEffect(() => {
+    if (open) {
+      const id = setTimeout(() => textareaRef.current?.focus(), 50);
+      return () => clearTimeout(id);
+    }
+  }, [open]);
 
   // Cargar topics cada vez que cambia el proyecto
   useEffect(() => {
@@ -96,7 +89,6 @@ export function TopicCombobox({
     return () => controller.abort();
   }, [projectId]);
 
-  // Agrupar topics: seeds vs variantes (user_added / user_edited)
   const { seeds, variants } = useMemo(() => {
     const seeds: CarouselTopicItem[] = [];
     const variants: CarouselTopicItem[] = [];
@@ -107,80 +99,128 @@ export function TopicCombobox({
     return { seeds, variants };
   }, [topics]);
 
-  // ¿El texto que está tipeando matchea exacto algún topic? Si no, ofrecemos
-  // "Usar como tema nuevo".
   const normalized = filter.trim().toLowerCase();
-  const hasExactMatch = normalized.length > 0
-    && topics.some((t) => t.title.trim().toLowerCase() === normalized);
+  const hasExactMatch =
+    normalized.length > 0 &&
+    topics.some((t) => t.title.trim().toLowerCase() === normalized);
   const showCreateOption = normalized.length >= 3 && !hasExactMatch;
 
   const handleSelect = (topic: CarouselTopicItem) => {
     onChange(topic.title);
     onSelectTopic(topic);
+    setFilter('');
     setOpen(false);
   };
 
   const handleCreate = () => {
     onChange(filter.trim());
     onSelectTopic(null);
+    setFilter('');
     setOpen(false);
   };
 
   return (
     <div className="flex flex-col gap-1.5">
-      {/* Trigger: textarea siempre editable + chevron para abrir el banco */}
-      <div className="relative">
-        <Textarea
-          value={value}
-          onChange={(e) => {
-            onChange(e.target.value);
-            // Si escribe a mano y se aleja del topic seleccionado, no
-            // limpiamos selectedTopicId — el server decide en el POST si
-            // hubo diff. Eso preserva el linkage parent_topic_id para
-            // variantes.
-          }}
-          placeholder={placeholder}
-          rows={3}
-          className="pr-10"
-          aria-invalid={Boolean(errorMessage)}
-        />
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger
+      <Popover open={open} onOpenChange={setOpen}>
+        {/* ── Trigger: área entera clickeable ── */}
+        <PopoverTrigger asChild>
+          <button
             type="button"
-            className="absolute top-2 right-2 inline-flex items-center justify-center size-7 rounded-md hover:bg-muted text-muted-foreground transition-colors"
-            aria-label="Abrir banco de temas"
+            aria-expanded={open}
+            aria-haspopup="listbox"
+            aria-label="Seleccionar tema del carrusel"
+            className={cn(
+              'group w-full min-h-[80px] rounded-lg border bg-transparent px-3 py-2.5',
+              'text-left text-sm transition-all duration-200 outline-none relative',
+              'hover:border-ring/60 hover:bg-accent/20',
+              'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+              open
+                ? 'border-ring ring-2 ring-ring ring-offset-2 ring-offset-background'
+                : 'border-input',
+              errorMessage && 'border-destructive focus-visible:ring-destructive',
+            )}
           >
-            <ChevronDownIcon className="size-4" />
-          </PopoverTrigger>
-          <PopoverContent
-            align="end"
-            sideOffset={6}
-            className="w-[min(28rem,calc(100vw-2rem))] p-0"
-          >
-            <Command shouldFilter={true}>
-              <CommandInput
-                placeholder="Filtrar temas…"
-                value={filter}
-                onValueChange={setFilter}
-                autoFocus
+            {value ? (
+              <span className="block text-foreground whitespace-pre-wrap break-words pr-7 leading-relaxed">
+                {value}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">{placeholder}</span>
+            )}
+
+            <span className="absolute top-2.5 right-2.5 flex items-center justify-center size-5 rounded text-muted-foreground/60 transition-all duration-200 group-hover:text-muted-foreground">
+              <ChevronDownIcon
+                className={cn(
+                  'size-4 transition-transform duration-200',
+                  open && 'rotate-180 text-primary',
+                )}
               />
-              <CommandList>
-                {loading && (
-                  <div className="flex items-center justify-center py-6 text-muted-foreground text-sm">
-                    <Loader2 className="size-4 animate-spin mr-2" />
-                    Cargando temas…
-                  </div>
-                )}
+            </span>
+          </button>
+        </PopoverTrigger>
 
-                {!loading && topics.length === 0 && (
-                  <CommandEmpty>
-                    No hay temas cargados para este proyecto todavía.
-                  </CommandEmpty>
-                )}
+        {/* ── Popover: textarea + lista ── */}
+        <PopoverContent
+          align="start"
+          sideOffset={6}
+          className="w-[var(--radix-popover-trigger-width)] p-0 shadow-2xl border-border/80"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          {/* Editar / escribir tema propio */}
+          <div className="p-3 border-b border-border/60">
+            <Textarea
+              ref={textareaRef}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder={placeholder}
+              rows={3}
+              className="resize-none border-0 shadow-none focus-visible:ring-0 p-0 text-sm bg-transparent"
+            />
+          </div>
 
-                {!loading && seeds.length > 0 && (
-                  <CommandGroup heading="Sugeridos para este proyecto">
-                    {seeds.map((t) => (
+          {/* Banco de temas */}
+          <Command shouldFilter>
+            <CommandInput
+              placeholder="Filtrar temas del banco…"
+              value={filter}
+              onValueChange={setFilter}
+              className="text-sm"
+            />
+            <CommandList className="max-h-52">
+              {loading && (
+                <div className="flex items-center justify-center py-6 text-muted-foreground text-sm">
+                  <Loader2 className="size-4 animate-spin mr-2" />
+                  Cargando temas…
+                </div>
+              )}
+
+              {!loading && topics.length === 0 && (
+                <CommandEmpty>
+                  No hay temas cargados para este proyecto todavía.
+                </CommandEmpty>
+              )}
+
+              {!loading && seeds.length > 0 && (
+                <CommandGroup heading="Sugeridos para este proyecto">
+                  {seeds.map((t) => (
+                    <CommandItem
+                      key={t.id}
+                      value={t.title}
+                      onSelect={() => handleSelect(t)}
+                      className="gap-2"
+                    >
+                      <span className="flex-1 truncate">{t.title}</span>
+                      <UsageBadge count={t.usageCount} />
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+
+              {!loading && variants.length > 0 && (
+                <>
+                  <CommandSeparator />
+                  <CommandGroup heading="Tus variantes">
+                    {variants.map((t) => (
                       <CommandItem
                         key={t.id}
                         value={t.title}
@@ -192,50 +232,31 @@ export function TopicCombobox({
                       </CommandItem>
                     ))}
                   </CommandGroup>
-                )}
+                </>
+              )}
 
-                {!loading && variants.length > 0 && (
-                  <>
-                    <CommandSeparator />
-                    <CommandGroup heading="Tus variantes">
-                      {variants.map((t) => (
-                        <CommandItem
-                          key={t.id}
-                          value={t.title}
-                          onSelect={() => handleSelect(t)}
-                          className="gap-2"
-                        >
-                          <span className="flex-1 truncate">{t.title}</span>
-                          <UsageBadge count={t.usageCount} />
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </>
-                )}
-
-                {!loading && showCreateOption && (
-                  <>
-                    <CommandSeparator />
-                    <CommandGroup>
-                      <CommandItem
-                        // forceMount via value distinto evita que cmdk lo filtre
-                        value={`__create__${filter}`}
-                        onSelect={handleCreate}
-                        className="gap-2 text-foreground/90"
-                      >
-                        <PlusIcon className="size-4" />
-                        <span className="truncate">
-                          Usar como tema nuevo: <span className="font-medium">"{filter.trim()}"</span>
-                        </span>
-                      </CommandItem>
-                    </CommandGroup>
-                  </>
-                )}
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-      </div>
+              {!loading && showCreateOption && (
+                <>
+                  <CommandSeparator />
+                  <CommandGroup>
+                    <CommandItem
+                      value={`__create__${filter}`}
+                      onSelect={handleCreate}
+                      className="gap-2 text-foreground/90"
+                    >
+                      <PlusIcon className="size-4" />
+                      <span className="truncate">
+                        Usar como tema nuevo:{' '}
+                        <span className="font-medium">"{filter.trim()}"</span>
+                      </span>
+                    </CommandItem>
+                  </CommandGroup>
+                </>
+              )}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
 
       {errorMessage && (
         <p className="text-xs text-destructive">{errorMessage}</p>

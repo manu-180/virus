@@ -11,7 +11,7 @@ from . import __version__
 from .config import get_settings
 from .exceptions import PublisherError
 from .logging_config import configure_logging, get_logger
-from .routes import health
+from .routes import feed, health
 
 
 @asynccontextmanager
@@ -51,8 +51,4 @@ async def publisher_error_handler(_: Request, exc: PublisherError) -> JSONRespon
 
 # ── Routes ──────────────────────────────────────────────────────
 app.include_router(health.router)
-
-# Carousel and admin routes are wired up in subsequent commits:
-# from .routes import carousel, admin
-# app.include_router(carousel.router, prefix="/feed")
-# app.include_router(admin.router, prefix="/admin")
+app.include_router(feed.router, prefix="/feed")

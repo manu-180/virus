@@ -13,6 +13,7 @@ import type {
 } from '@/app/(dashboard)/dashboard/carousels/[id]/page';
 import { SlideGallery } from './SlideGallery';
 import { CaptionPicker } from './CaptionPicker';
+import { PublishToInstagram } from './PublishToInstagram';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -755,6 +756,15 @@ export function CarouselDetailView({ initialData }: CarouselDetailViewProps) {
             captions={captions}
             carouselId={project.id}
             onRegenerate={handleCaptionRegenerate}
+          />
+        )}
+
+        {/* ── PUBLISH TO INSTAGRAM ───────────────────────────────────────── */}
+        {project.status === 'ready' && (
+          <PublishToInstagram
+            carouselId={project.id}
+            projectId={project.project_id}
+            hasReadyCaption={captions.length > 0}
           />
         )}
 
