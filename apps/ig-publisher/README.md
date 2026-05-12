@@ -22,11 +22,14 @@ We isolate it behind a small HTTP surface so the rest of virus stays TypeScript.
 |---|---|
 | HMAC auth | ✅ |
 | Health endpoint | ✅ |
-| Vault-backed account loader | ⏳ next commit |
-| Session manager | ⏳ |
-| Publish endpoint | ⏳ |
-| Onboarding CLI | ⏳ |
+| Vault-backed account loader | ✅ (`app/accounts.py`) |
+| Session manager | ✅ (`app/sessions.py`) |
+| Onboarding CLI | ✅ (`scripts/onboard_account.py`) |
+| Publish endpoint | ⏳ next phase |
 | Railway deploy | ⏳ |
+
+**Prerequisite:** migration `0028_ig_accounts.sql` must be applied on the
+virus Supabase project (table `ig_accounts` + the 4 RPCs).
 
 ## Local dev
 
@@ -58,6 +61,7 @@ pytest -m integration         # also hits real Supabase / IG (requires creds)
 ## Onboarding a new IG account
 
 ```bash
+# From apps/ig-publisher (venv active, .env filled)
 python -m scripts.onboard_account \
   --project-slug apex \
   --ig-username apex.stack \
@@ -69,7 +73,45 @@ once locally to obtain a session blob, then encrypts password/TOTP/session in
 Supabase Vault and inserts an `ig_accounts` row. After this, the deployed
 publisher can post to that account without needing the credentials again.
 
-See `docs/ig-publisher/onboarding-guide.md` for the full walkthrough.
+### Useful flags
+
+- `--project-id <UUID>` — skip slug lookup entirely
+- `--user-email <email>` — disambiguates `--project-slug` when several owners
+  share a slug
+- `--no-totp` — don't prompt for a TOTP seed (account has no 2FA)
+- `--dry-run` — validate inputs and log in to Instagram, but don't write
+  anything to Supabase. Use this **first** for each new account to confirm
+  that login works before committing credentials to Vault.
+
+### Validating apex + botlode (phase B checklist)
+
+```bash
+# 1. one-time setup
+python -m venv .venv
+. .venv/Scripts/activate              # Windows
+pip install -r requirements.txt
+cp .env.example .env                  # fill SUPABASE_* + IG_PUBLISHER_HMAC_SECRET
+
+# 2. dry-run apex (no DB write) — confirms IG credentials work
+python -m scripts.onboard_account \
+  --project-slug apex --ig-username apex.stack --dry-run
+
+# 3. if dry-run prints "✓ Login succeeded", run for real
+python -m scripts.onboard_account \
+  --project-slug apex --ig-username apex.stack --display-name "APEX"
+
+# 4. repeat for botlode
+python -m scripts.onboard_account \
+  --project-slug botlode --ig-username botlode.ai --display-name "BotLode"
+```
+
+### If Instagram returns a challenge
+
+The CLI prints `✖ Login failed: instagram challenge required` and **nothing**
+is written to Supabase. Open the Instagram app on your phone, confirm the
+"Was this you?" prompt, then re-run the script. If the challenge keeps
+firing, take a break (IG flags rapid logins from new IPs) and try again
+later from the same machine.
 
 ## Operational notes
 
