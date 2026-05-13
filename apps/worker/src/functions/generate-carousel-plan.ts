@@ -41,7 +41,7 @@ import type { ProjectBrand } from '@virus/shared/viral';
 // sanitizeSlideBody() and is 110 — that helper walks back to the last sentence
 // end or whitespace and force-completes with a period, so bodies never end
 // mid-word in the rendered PNG.
-const MAX_HEADLINE = 60;
+const MAX_HEADLINE = 40;
 const MAX_BODY = 120;
 const BODY_TARGET = 110;
 const VALID_ROLES = ['hook', 'problem', 'insight', 'data', 'example', 'cta'] as const;

@@ -115,7 +115,7 @@ function buildLayout({ slide, preset, overrides }: LayoutArgs): SatoriNode {
 function buildBottomStackLayout({ slide, preset, overrides }: LayoutArgs): SatoriNode {
   const p = preset.padding;
   const titleSize = Math.round(preset.titleSize * overrides.titleSizeMultiplier);
-  const headline = applyCase(truncate(slide.headline, 60), preset.titleUppercase);
+  const headline = applyCase(truncate(slide.headline, 40), preset.titleUppercase);
   const body = resolveBody(slide.body, overrides);
 
   const eyebrow = overrides.showEyebrow ? buildEyebrowChip(slide.role, preset) : emptyDiv();
@@ -147,7 +147,7 @@ function buildBottomStackLayout({ slide, preset, overrides }: LayoutArgs): Sator
 function buildCenterStackLayout({ slide, preset, overrides }: LayoutArgs): SatoriNode {
   const p = preset.padding;
   const titleSize = Math.round(preset.titleSize * overrides.titleSizeMultiplier);
-  const headline = applyCase(truncate(slide.headline, 60), preset.titleUppercase);
+  const headline = applyCase(truncate(slide.headline, 40), preset.titleUppercase);
   const body = resolveBody(slide.body, overrides);
 
   const titleEl = buildTitleEl(headline, titleSize, preset, overrides);
@@ -178,7 +178,7 @@ function buildCenterStackLayout({ slide, preset, overrides }: LayoutArgs): Sator
 function buildEditorialLayout({ slide, preset, overrides }: LayoutArgs): SatoriNode {
   const p = preset.padding;
   const titleSize = Math.round(preset.titleSize * overrides.titleSizeMultiplier);
-  const headline = applyCase(truncate(slide.headline, 60), preset.titleUppercase);
+  const headline = applyCase(truncate(slide.headline, 40), preset.titleUppercase);
   const body = resolveBody(slide.body, overrides);
 
   const slideNum = String(slide.idx + 1).padStart(2, '0');

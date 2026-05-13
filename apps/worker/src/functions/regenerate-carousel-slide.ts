@@ -192,7 +192,7 @@ async function replanSingleSlide(
   // doesn't throw `compose_empty_headline`. Not pretty, but the slide will be
   // visibly off-brand and the user will re-trigger regenerate — which beats a
   // silent text-less PNG.
-  const safeHeadline = (brief.topic || 'Slide').slice(0, 60).trim() || 'Slide';
+  const safeHeadline = (brief.topic || 'Slide').slice(0, 40).trim() || 'Slide';
   return { ...fallback, headline: safeHeadline };
 }
 

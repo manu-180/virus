@@ -780,29 +780,25 @@
   ],
   "hashtags": {
     "reels": [
-      "#programming",
-      "#coding",
-      "#developer",
-      "#javascript",
-      "#webdev",
-      "#programmer",
-      "#webdeveloper",
-      "#softwaredeveloper",
-      "#reactjs",
-      "#typescript",
-      "#nextjs",
-      "#programacion"
+      "desarrolloweb",
+      "programacion",
+      "marketingdigital",
+      "emprendedores",
+      "agenciadigital"
     ],
     "tiktok": [
-      "#coding",
-      "#programming",
-      "#developer",
-      "#tech"
+      "desarrolloweb",
+      "programacion",
+      "marketingdigital",
+      "emprendedores",
+      "agenciadigital"
     ],
     "shorts": [
-      "#shorts",
-      "#coding",
-      "#programming"
+      "desarrolloweb",
+      "programacion",
+      "marketingdigital",
+      "emprendedores",
+      "agenciadigital"
     ]
   },
   "captionTemplates": {

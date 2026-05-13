@@ -244,7 +244,7 @@ ACTO 3 — Resolución (slides ${lastIdx - 1} y ${lastIdx})
 - Slide ${lastIdx} (role: "cta") — cierra el loop volviendo al hook (loop closure). Reformula la promesa del slide 0 como acción. CTA: "${brief.cta}". Body opcional.
 
 ## Reglas de texto
-- headline: máximo 60 caracteres. Genera curiosidad sin clickbait — entregá lo prometido.
+- headline: máximo 40 caracteres (CONTÁ antes de escribir). Máximo 5-6 palabras. Genera curiosidad sin clickbait — entregá lo prometido.
 - body: ESTRICTO máximo 110 caracteres. UNA sola oración completa, breve, certera, terminada en PUNTO FINAL. Mejor 70 caracteres completos que 110 truncados. Si la idea no entra en 110 caracteres en oración completa, simplificala — quitá adjetivos, quitá ejemplos, quedate con la idea pura. Prohibido: frases colgadas, puntos suspensivos al final, flechas, "pero...", "y acá viene lo interesante", oraciones partidas, conectores finales ("y", "pero", "porque", "que") sin completar. Contá los caracteres antes de responder.
 - Sin emojis decorativos. Máximo 1 emoji solo si suma significado real.
 - Hablá en "vos" (español argentino), nunca en "tú".
@@ -298,7 +298,7 @@ export function buildCaptionSystemPrompt(brand: ProjectBrand): string {
 - Máximo 2 emojis, solo si suman valor real — no decorativos
 - No clickbait: entregá lo que prometés
 - CTA claro al final
-- 5 a 10 hashtags relevantes: niche + marca + 1-2 genéricos (ej. #argentina #marketing #emprendedores)
+- Exactamente 5 hashtags de máximo impacto para el nicho del proyecto: priorizá los de mayor volumen de búsqueda e interacción en Instagram, específicos al tema del carrusel y la marca. Sin hashtags genéricos relleno.
 - Hashtags sin el símbolo # en el JSON
 
 ## Output
@@ -316,7 +316,7 @@ Sin texto extra, sin explicaciones, solo el JSON.`;
 
 export const CaptionResponseSchema = z.object({
   text: z.string().min(1),
-  hashtags: z.array(z.string().min(1)).min(1).max(10),
+  hashtags: z.array(z.string().min(1)).min(3).max(5),
 });
 
 export type CaptionResponse = z.infer<typeof CaptionResponseSchema>;

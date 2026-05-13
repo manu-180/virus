@@ -11,7 +11,7 @@ export const SlideSpecSchema = z.object({
   // a visible solid overlay block but no text inside — the slide is marked
   // status='ready' and the user has no signal that something is wrong.
   // Reject at the validation boundary so the LLM-fix retry path kicks in.
-  headline: z.string().min(1).max(60),
+  headline: z.string().min(1).max(40),
   // body is intentionally tight (≤120). Bodies were getting silently chopped
   // mid-word in the slide PNG because the prompt asked for ≤160, the schema
   // capped at 140, and the sanitizer hard-sliced at 140 with no ellipsis.
