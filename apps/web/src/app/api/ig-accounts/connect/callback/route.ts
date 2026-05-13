@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
       req,
       state.returnTo,
       'no_pages',
-      'Tu cuenta de Facebook no tiene páginas con Instagram vinculado',
+      'No se encontró una cuenta de Instagram Business o Creator vinculada',
     );
   }
 

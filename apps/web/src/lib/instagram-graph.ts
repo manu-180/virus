@@ -1,30 +1,33 @@
 /**
  * Server-side Meta Graph API helpers used by the OAuth + refresh routes.
  * Mirrors apps/worker/src/lib/instagram-graph.ts but only the bits the web
- * needs (token exchange, page enumeration). Keep them in sync.
+ * needs (token exchange, account discovery). Keep them in sync.
+ *
+ * Uses the NEW Instagram Business Login API (api.instagram.com / graph.instagram.com).
+ * No Facebook Pages required — the user authorizes directly with their IG account.
  */
 import 'server-only';
 
 const GRAPH_VERSION = 'v21.0';
-const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
-const FB_LOGIN_BASE = `https://www.facebook.com/${GRAPH_VERSION}`;
+/** New Instagram Graph API base (replaces graph.facebook.com for IG operations) */
+const GRAPH_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+/** Instagram OAuth authorization dialog */
+const IG_AUTH_BASE = `https://www.instagram.com`;
+/** Instagram token exchange endpoint */
+const IG_TOKEN_BASE = `https://api.instagram.com`;
 
 /**
- * Permission scopes we ask for during OAuth.
+ * Permission scopes for the new Instagram Business Login API.
  *
- * - instagram_basic: read IG account profile
- * - instagram_content_publish: post media (the whole point)
- * - pages_show_list / pages_read_engagement: enumerate the user's pages
- *   to find the one linked to the IG Business account
- * - business_management: optional, helps when account is inside a Meta
- *   Business portfolio (the modern default)
+ * - instagram_business_basic: read IG account profile and media
+ * - instagram_business_content_publish: post media (the whole point)
+ *
+ * No Facebook Pages scopes needed — the new API works directly with the
+ * Instagram Business / Creator account token.
  */
 export const META_OAUTH_SCOPES = [
-  'instagram_basic',
-  'instagram_content_publish',
-  'pages_show_list',
-  'pages_read_engagement',
-  'business_management',
+  'instagram_business_basic',
+  'instagram_business_content_publish',
 ].join(',');
 
 export interface OAuthState {
@@ -58,7 +61,7 @@ export function buildAuthorizeUrl(opts: {
   redirectUri: string;
   state: string;
 }): string {
-  const u = new URL(`${FB_LOGIN_BASE}/dialog/oauth`);
+  const u = new URL(`${IG_AUTH_BASE}/oauth/authorize`);
   u.searchParams.set('client_id', opts.appId);
   u.searchParams.set('redirect_uri', opts.redirectUri);
   u.searchParams.set('scope', META_OAUTH_SCOPES);
@@ -71,6 +74,23 @@ interface GraphErrorPayload {
   error?: { message?: string; type?: string; code?: number };
 }
 
+async function throwOnError<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  let body: T | GraphErrorPayload;
+  try {
+    body = text ? JSON.parse(text) : ({} as T);
+  } catch {
+    throw new Error(`Instagram API returned non-JSON: HTTP ${res.status} ${text.slice(0, 120)}`);
+  }
+  if (!res.ok) {
+    const e = (body as GraphErrorPayload).error;
+    throw new Error(
+      `Instagram API error ${e?.code ?? res.status}: ${e?.message ?? `HTTP ${res.status}`}`,
+    );
+  }
+  return body as T;
+}
+
 async function graphGet<T>(
   path: string,
   params: Record<string, string>,
@@ -78,118 +98,95 @@ async function graphGet<T>(
   const url = new URL(`${GRAPH_BASE}${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   const res = await fetch(url, { method: 'GET' });
-  const text = await res.text();
-  let body: T | GraphErrorPayload;
-  try {
-    body = text ? JSON.parse(text) : ({} as T);
-  } catch {
-    throw new Error(`Meta returned non-JSON: HTTP ${res.status} ${text.slice(0, 120)}`);
-  }
-  if (!res.ok) {
-    const e = (body as GraphErrorPayload).error;
-    throw new Error(
-      `Meta error ${e?.code ?? res.status}: ${e?.message ?? `HTTP ${res.status}`}`,
-    );
-  }
-  return body as T;
+  return throwOnError<T>(res);
 }
 
 // ── Token exchange ────────────────────────────────────────────────────
 
+/**
+ * Exchange the OAuth code for a short-lived Instagram user token.
+ * Uses the new Instagram Business Login endpoint (POST form body).
+ */
 export async function exchangeCodeForUserToken(opts: {
   code: string;
   appId: string;
   appSecret: string;
   redirectUri: string;
 }): Promise<{ accessToken: string; expiresIn: number }> {
-  const body = await graphGet<{ access_token: string; expires_in?: number }>(
-    '/oauth/access_token',
-    {
-      client_id: opts.appId,
-      client_secret: opts.appSecret,
-      redirect_uri: opts.redirectUri,
-      code: opts.code,
-    },
-  );
+  const form = new URLSearchParams();
+  form.set('client_id', opts.appId);
+  form.set('client_secret', opts.appSecret);
+  form.set('grant_type', 'authorization_code');
+  form.set('redirect_uri', opts.redirectUri);
+  form.set('code', opts.code);
+
+  const res = await fetch(`${IG_TOKEN_BASE}/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form.toString(),
+  });
+  const body = await throwOnError<{ access_token: string; expires_in?: number }>(res);
   return { accessToken: body.access_token, expiresIn: body.expires_in ?? 3600 };
 }
 
+/**
+ * Exchange the short-lived token for a long-lived Instagram token (~60 days).
+ * Uses graph.instagram.com (not graph.facebook.com).
+ */
 export async function exchangeForLongLivedUserToken(opts: {
   shortLivedToken: string;
   appId: string;
   appSecret: string;
 }): Promise<{ accessToken: string; expiresIn: number }> {
-  const body = await graphGet<{ access_token: string; expires_in: number }>(
-    '/oauth/access_token',
-    {
-      grant_type: 'fb_exchange_token',
-      client_id: opts.appId,
-      client_secret: opts.appSecret,
-      fb_exchange_token: opts.shortLivedToken,
-    },
-  );
+  const url = new URL('https://graph.instagram.com/access_token');
+  url.searchParams.set('grant_type', 'ig_exchange_token');
+  url.searchParams.set('client_id', opts.appId);
+  url.searchParams.set('client_secret', opts.appSecret);
+  url.searchParams.set('access_token', opts.shortLivedToken);
+
+  const res = await fetch(url, { method: 'GET' });
+  const body = await throwOnError<{ access_token: string; expires_in: number }>(res);
   return { accessToken: body.access_token, expiresIn: body.expires_in };
 }
 
-// ── Page + IG discovery ───────────────────────────────────────────────
+// ── Account discovery ─────────────────────────────────────────────────
 
 export interface DiscoveredAccount {
+  /** Same as igUserId in the new Instagram Business Login API (no Pages). */
   pageId: string;
   pageName: string;
+  /** The long-lived Instagram user token (used directly for publishing). */
   pageAccessToken: string;
   igUserId: string;
   igUsername: string;
 }
 
 /**
- * Walk the user's pages, find any with a linked Instagram Business account,
- * and return the ones we can actually publish to. The page access token in
- * each row is long-lived (no expiry as long as the user token is valid).
+ * Resolve the authenticated user's Instagram Business / Creator account.
+ *
+ * New Instagram Business Login: no Facebook Pages needed. We query /me
+ * directly on graph.instagram.com to get the IG user ID and username.
  */
 export async function discoverPublishableAccounts(
   longLivedUserToken: string,
 ): Promise<DiscoveredAccount[]> {
-  const pagesRes = await graphGet<{
-    data: Array<{ id: string; name: string; access_token: string }>;
-  }>('/me/accounts', {
-    access_token: longLivedUserToken,
-    fields: 'id,name,access_token',
-    limit: '50',
-  });
+  const me = await graphGet<{ id: string; username?: string; name?: string }>(
+    '/me',
+    {
+      access_token: longLivedUserToken,
+      fields: 'id,username,name',
+    },
+  );
 
-  const out: DiscoveredAccount[] = [];
-  for (const page of pagesRes.data ?? []) {
-    try {
-      const pageRes = await graphGet<{
-        instagram_business_account?: { id: string };
-      }>(`/${page.id}`, {
-        access_token: page.access_token,
-        fields: 'instagram_business_account',
-      });
-      const igId = pageRes.instagram_business_account?.id;
-      if (!igId) continue;
+  if (!me.id) return [];
 
-      let username = `ig_${igId}`;
-      try {
-        const igRes = await graphGet<{ username: string }>(`/${igId}`, {
-          access_token: page.access_token,
-          fields: 'username',
-        });
-        username = igRes.username;
-      } catch {
-        // Keep the fallback username
-      }
-
-      out.push({
-        pageId: page.id,
-        pageName: page.name,
-        pageAccessToken: page.access_token,
-        igUserId: igId,
-        igUsername: username,
-      });
-    } catch {
-      // skip pages we can't query
-    }
-  }
-  return out;
+  return [
+    {
+      pageId: me.id,
+      pageName: me.name ?? me.username ?? me.id,
+      pageAccessToken: longLivedUserToken,
+      igUserId: me.id,
+      igUsername: me.username ?? me.id,
+    },
+  ];
 }

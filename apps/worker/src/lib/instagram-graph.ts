@@ -23,7 +23,8 @@
  */
 
 const GRAPH_VERSION = 'v21.0';
-const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
+/** New Instagram Graph API — replaces graph.facebook.com for IG Business operations */
+const GRAPH_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -170,22 +171,27 @@ export async function exchangeForLongLivedUserToken(
   appId: string,
   appSecret: string,
 ): Promise<ExchangeShortLivedResult> {
-  const body = await graphCall<{ access_token: string; expires_in: number }>(
-    'GET',
-    '/oauth/access_token',
-    {
-      grant_type: 'fb_exchange_token',
-      client_id: appId,
-      client_secret: appSecret,
-      fb_exchange_token: shortLivedToken,
-    },
-  );
+  // New Instagram Business Login: long-lived token via graph.instagram.com
+  const url = new URL('https://graph.instagram.com/access_token');
+  url.searchParams.set('grant_type', 'ig_exchange_token');
+  url.searchParams.set('client_id', appId);
+  url.searchParams.set('client_secret', appSecret);
+  url.searchParams.set('access_token', shortLivedToken);
+  const res = await fetch(url);
+  const body = await res.json() as { access_token: string; expires_in: number };
+  if (!res.ok) throw new InstagramGraphError({
+    code: 'token_exchange_failed',
+    message: JSON.stringify(body),
+    httpStatus: res.status,
+    terminal: true,
+    authError: true,
+  });
   return { accessToken: body.access_token, expiresIn: body.expires_in };
 }
 
 /**
  * Exchange the OAuth `code` (from the redirect) for a short-lived user token.
- * This is the first step after the user authorizes the app.
+ * New Instagram Business Login: POST form body to api.instagram.com.
  */
 export async function exchangeCodeForUserToken(
   code: string,
@@ -193,16 +199,25 @@ export async function exchangeCodeForUserToken(
   appSecret: string,
   redirectUri: string,
 ): Promise<ExchangeShortLivedResult> {
-  const body = await graphCall<{ access_token: string; expires_in?: number }>(
-    'GET',
-    '/oauth/access_token',
-    {
-      client_id: appId,
-      client_secret: appSecret,
-      redirect_uri: redirectUri,
-      code,
-    },
-  );
+  const form = new URLSearchParams();
+  form.set('client_id', appId);
+  form.set('client_secret', appSecret);
+  form.set('grant_type', 'authorization_code');
+  form.set('redirect_uri', redirectUri);
+  form.set('code', code);
+  const res = await fetch('https://api.instagram.com/oauth/access_token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form.toString(),
+  });
+  const body = await res.json() as { access_token: string; expires_in?: number };
+  if (!res.ok) throw new InstagramGraphError({
+    code: 'code_exchange_failed',
+    message: JSON.stringify(body),
+    httpStatus: res.status,
+    terminal: true,
+    authError: true,
+  });
   return { accessToken: body.access_token, expiresIn: body.expires_in ?? 3600 };
 }
 
