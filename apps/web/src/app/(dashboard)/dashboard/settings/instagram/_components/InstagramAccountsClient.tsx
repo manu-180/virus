@@ -15,7 +15,7 @@
  */
 
 import type { ComponentType, SVGProps } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Loader2,
@@ -26,6 +26,7 @@ import {
   Trash2,
   ExternalLink,
   Info,
+  ChevronDown,
 } from 'lucide-react';
 import { InstagramIcon as Instagram } from '@/components/icons/InstagramIcon';
 import { useActiveProject } from '@/lib/active-project/hook';
@@ -76,7 +77,9 @@ function expiresDays(iso: string | null): number | null {
 }
 
 export default function InstagramAccountsClient() {
-  const { activeProject } = useActiveProject();
+  const { activeProject, projects, switchProject, isLoading: projectsLoading } = useActiveProject();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const [accounts, setAccounts] = useState<IgAccount[] | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -84,6 +87,23 @@ export default function InstagramAccountsClient() {
   const [showWizard, setShowWizard] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  // ── Close dropdown on outside click ──────────────────────────────────
+  useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    if (dropdownOpen) document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [dropdownOpen]);
+
+  // ── Reset accounts list when active project changes ───────────────────
+  useEffect(() => {
+    setAccounts(null);
+    setReloadKey((k) => k + 1);
+  }, [activeProject?.id]);
 
   // ── Read connect=ok/error/cancelled/no_pages from URL params ─────────
   const connectFlag = searchParams.get('connect');
@@ -100,7 +120,10 @@ export default function InstagramAccountsClient() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/ig-accounts');
+        const url = activeProject
+          ? `/api/ig-accounts?projectId=${encodeURIComponent(activeProject.id)}`
+          : '/api/ig-accounts';
+        const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const body = (await res.json()) as { accounts: IgAccount[] };
         if (!cancelled) setAccounts(body.accounts);
@@ -111,7 +134,7 @@ export default function InstagramAccountsClient() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, activeProject?.id]);
 
   function handleConnect() {
     if (!activeProject) {
@@ -188,27 +211,83 @@ export default function InstagramAccountsClient() {
       )}
 
       {/* Primary CTA */}
-      <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-5 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <Instagram className="w-6 h-6 text-pink-400 shrink-0" />
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-white">
-              Conectar Instagram a <span className="text-[#C8FF57]">{activeProject?.name ?? '...'}</span>
-            </p>
-            <p className="text-xs text-white/50 mt-0.5">
-              Una vez conectado, publicás carruseles con un click. Sin contraseñas, sin challenges.
-            </p>
+      <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <Instagram className="w-6 h-6 text-pink-400 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-white">
+                Conectar Instagram a <span className="text-[#C8FF57]">{activeProject?.name ?? '...'}</span>
+              </p>
+              <p className="text-xs text-white/50 mt-0.5">
+                Una vez conectado, publicás carruseles con un click. Sin contraseñas, sin challenges.
+              </p>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={handleConnect}
+            disabled={!activeProject}
+            className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold bg-gradient-to-r from-pink-500 to-purple-600 text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+          >
+            <Instagram className="w-4 h-4" />
+            Conectar con Instagram
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={handleConnect}
-          disabled={!activeProject}
-          className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold bg-gradient-to-r from-pink-500 to-purple-600 text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
-        >
-          <Instagram className="w-4 h-4" />
-          Conectar con Instagram
-        </button>
+
+        {/* Project selector */}
+        {projects.length > 1 && (
+          <div className="flex items-center gap-2 text-xs text-white/50">
+            <span>Proyecto:</span>
+            <div ref={dropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setDropdownOpen((v) => !v)}
+                disabled={projectsLoading}
+                className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-medium text-white/80 hover:border-white/30 hover:text-white transition-colors disabled:opacity-40"
+              >
+                {projectsLoading ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <>
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: activeProject?.themeColor ?? '#888' }}
+                    />
+                    {activeProject?.name ?? '—'}
+                    <ChevronDown className="w-3 h-3 text-white/40" />
+                  </>
+                )}
+              </button>
+
+              {dropdownOpen && (
+                <div className="absolute left-0 top-full mt-1 z-20 min-w-[160px] rounded-lg border border-white/[0.12] bg-[#1a1d24] shadow-xl overflow-hidden">
+                  {projects.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        switchProject(p.slug);
+                        setDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${
+                        p.id === activeProject?.id
+                          ? 'bg-white/10 text-white font-semibold'
+                          : 'text-white/70 hover:bg-white/5 hover:text-white'
+                      }`}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ backgroundColor: p.themeColor ?? '#888' }}
+                      />
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Accounts list */}

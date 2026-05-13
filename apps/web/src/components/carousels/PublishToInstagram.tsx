@@ -15,10 +15,11 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, ExternalLink, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Loader2, ExternalLink, AlertCircle, CheckCircle2, ChevronDown } from 'lucide-react';
 import { InstagramIcon as Instagram } from '@/components/icons/InstagramIcon';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/browser';
+import { useActiveProject } from '@/lib/active-project/hook';
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -92,6 +93,14 @@ export function PublishToInstagram({
   hasReadyCaption,
   disabled = false,
 }: PublishToInstagramProps) {
+  const { activeProject, projects, switchProject, isLoading: projectsLoading } = useActiveProject();
+
+  // The "selected project for IG" starts as the carousel's own project_id,
+  // but can be overridden by the user to pick any of their projects.
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(projectId);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   const [accounts, setAccounts] = useState<IgAccount[] | null>(null);
   const [publications, setPublications] = useState<IgPublication[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
@@ -99,14 +108,26 @@ export function PublishToInstagram({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const subscribedRef = useRef(false);
 
-  // ── Load accounts + publications on mount ──────────────────────────
+  // ── Close dropdown on outside click ──────────────────────────────────
+  useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    if (dropdownOpen) document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [dropdownOpen]);
+
+  // ── Load accounts + publications on mount / when selectedProjectId changes ──
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoadingAccounts(true);
+      setAccounts(null);
       try {
         const [aRes, pRes] = await Promise.all([
-          fetch(`/api/ig-accounts?projectId=${encodeURIComponent(projectId)}`),
+          fetch(`/api/ig-accounts?projectId=${encodeURIComponent(selectedProjectId)}`),
           fetch(`/api/carousels/${carouselId}/publish-ig`),
         ]);
         if (cancelled) return;
@@ -130,7 +151,7 @@ export function PublishToInstagram({
     return () => {
       cancelled = true;
     };
-  }, [carouselId, projectId]);
+  }, [carouselId, selectedProjectId]);
 
   // ── Realtime subscription for ig_publications ──────────────────────
   useEffect(() => {
@@ -167,6 +188,9 @@ export function PublishToInstagram({
       supabase.removeChannel(channel);
     };
   }, [carouselId]);
+
+  // Derive display info for the currently-selected project
+  const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? activeProject ?? null;
 
   const activeAccount = (accounts ?? []).find((a) => a.status === 'active') ?? null;
   const latestPublication = publications[0] ?? null;
@@ -215,6 +239,61 @@ export function PublishToInstagram({
     );
   }
 
+  // ── Shared project selector UI ─────────────────────────────────────────
+  const projectSelector = projects.length > 1 ? (
+    <div className="flex items-center gap-2 text-xs text-white/50">
+      <span>Proyecto IG:</span>
+      <div ref={dropdownRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setDropdownOpen((v) => !v)}
+          disabled={projectsLoading}
+          className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-medium text-white/80 hover:border-white/30 hover:text-white transition-colors disabled:opacity-40"
+        >
+          {projectsLoading ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <>
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: selectedProject?.themeColor ?? '#888' }}
+              />
+              {selectedProject?.name ?? '—'}
+              <ChevronDown className="w-3 h-3 text-white/40" />
+            </>
+          )}
+        </button>
+
+        {dropdownOpen && (
+          <div className="absolute left-0 top-full mt-1 z-20 min-w-[160px] rounded-lg border border-white/[0.12] bg-[#1a1d24] shadow-xl overflow-hidden">
+            {projects.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => {
+                  setSelectedProjectId(p.id);
+                  switchProject(p.slug);
+                  setDropdownOpen(false);
+                }}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${
+                  p.id === selectedProjectId
+                    ? 'bg-white/10 text-white font-semibold'
+                    : 'text-white/70 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: p.themeColor ?? '#888' }}
+                />
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
+
   if (!activeAccount) {
     return (
       <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-5 py-5 space-y-3">
@@ -223,10 +302,13 @@ export function PublishToInstagram({
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-white/80">Publicar en Instagram</p>
             <p className="text-xs text-white/50 mt-1">
-              Conectá una cuenta de Instagram para este proyecto y vas a poder publicar de un click.
+              Conectá una cuenta de Instagram para{' '}
+              <span className="text-[#C8FF57]">{selectedProject?.name ?? 'este proyecto'}</span>{' '}
+              y vas a poder publicar de un click.
             </p>
           </div>
         </div>
+        {projectSelector && <div className="pl-8">{projectSelector}</div>}
         <div className="pl-8">
           <Link
             href="/dashboard/settings/instagram"
@@ -261,6 +343,9 @@ export function PublishToInstagram({
           {activeAccount.post_count_24h} / {activeAccount.daily_post_limit} hoy
         </div>
       </div>
+
+      {/* Project selector — only shown when user has more than one project */}
+      {projectSelector}
 
       {/* Latest publication summary */}
       {latestPublication && (
