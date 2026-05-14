@@ -3,7 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { inngest } from '@/lib/inngest';
 import { CreateCarouselSchema } from '@/lib/validators/carousels';
-import { bumpTopicUsage } from '@/server/topics/queries';
+import { applyHeuristicDefaults, bumpTopicUsage } from '@/server/topics/queries';
+import { inferTopicDefaults } from '@virus/shared/carousel';
 import { sweepStuckCarousels } from '@/server/carousel/watchdog';
 
 async function requireUser() {
@@ -70,16 +71,32 @@ export async function POST(req: NextRequest) {
     // Bump contador de topic + dimension_usage. NO crítico — si falla,
     // logueamos y seguimos. El carrusel ya está creado; los contadores
     // son metadata para mejorar UX, no para gating.
+    //
+    // Si el topic terminó siendo user_added/user_edited (es decir, NO un
+    // seed curado), aplicamos la heurística sobre el título para rellenar
+    // additional_angles/tones y target_slide_count. Esto le da al scheduler
+    // variedad la PRÓXIMA vez que rotee a este topic, en lugar de fijarlo
+    // al ángulo/tono que el usuario eligió esta vez.
     try {
-      await bumpTopicUsage({
+      const bumpedTopicId = await bumpTopicUsage({
         carouselId: carousel.id,
         rawTitle: input.brief.topic,
         angle: input.brief.angle,
         tone: input.brief.tone,
         selectedTopicId: input.selectedTopicId ?? null,
       });
+
+      if (bumpedTopicId) {
+        const inferred = inferTopicDefaults(input.brief.topic);
+        await applyHeuristicDefaults({
+          topicId: bumpedTopicId,
+          additionalAngles: inferred.additionalAngles,
+          additionalTones: inferred.additionalTones,
+          targetSlideCount: inferred.targetSlideCount,
+        });
+      }
     } catch (bumpErr) {
-      console.error('[POST /api/carousels] bumpTopicUsage failed:', bumpErr);
+      console.error('[POST /api/carousels] bumpTopicUsage/heuristic failed:', bumpErr);
     }
 
     let dispatchedEventId: string | null = null;

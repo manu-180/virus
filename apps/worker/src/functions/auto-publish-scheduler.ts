@@ -114,6 +114,9 @@ interface TopicRow {
   title: string;
   suggested_angle: string | null;
   suggested_tone: string | null;
+  additional_angles: string[] | null;
+  additional_tones: string[] | null;
+  target_slide_count: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -264,15 +267,32 @@ export const autoPublishScheduler = inngest.createFunction(
           continue;
         }
 
-        // ── Create carousel_projects row ──────────────────────────────────
-        // Slide count varies organically around the schedule default to avoid
-        // bot-uniform output. See `pickSlideCount` for the distribution.
-        const chosenSlideCount = pickSlideCount(schedule.default_slide_count);
+        // ── Smart angle/tone/slide-count selection ─────────────────────────
+        // angle/tone: pick the least-used value of each topic's *allowed set*
+        // (suggested + additional) within the project's dimension_usage. This
+        // diversifies output across the topic's possible framings instead of
+        // always firing 'educational' + 'direct'.
+        //
+        // slide count: if the topic has an explicit target (e.g. "5 errores"
+        // → 7), honour it; otherwise fall back to the random distribution
+        // around the schedule default.
+        const allowedAngles = buildAllowedSet(topic.suggested_angle, topic.additional_angles);
+        const allowedTones = buildAllowedSet(topic.suggested_tone, topic.additional_tones);
+
+        const pickedAngle =
+          (await pickLeastUsedFromAllowed(supabase, acct.project_id, 'angle', allowedAngles)) ??
+          schedule.default_angle;
+        const pickedTone =
+          (await pickLeastUsedFromAllowed(supabase, acct.project_id, 'tone', allowedTones)) ??
+          schedule.default_tone;
+
+        const chosenSlideCount =
+          topic.target_slide_count ?? pickSlideCount(schedule.default_slide_count);
 
         const brief = {
           topic: topic.title,
-          angle: topic.suggested_angle ?? schedule.default_angle,
-          tone: topic.suggested_tone ?? schedule.default_tone,
+          angle: pickedAngle,
+          tone: pickedTone,
           slideCount: chosenSlideCount,
           language: schedule.default_language,
         };
@@ -371,6 +391,10 @@ export const autoPublishScheduler = inngest.createFunction(
           carouselId,
           topicId: topic.id,
           topicTitle: topic.title,
+          pickedAngle,
+          pickedTone,
+          slideCount: chosenSlideCount,
+          slideCountSource: topic.target_slide_count !== null ? 'topic_target' : 'schedule_random',
         });
       } catch (err) {
         // Don't let one bad schedule abort the others.
@@ -415,7 +439,9 @@ async function pickEligibleTopic(
 ): Promise<TopicRow | null> {
   const { data, error } = await supabase
     .from('carousel_topics')
-    .select('id, title, suggested_angle, suggested_tone, usage_count, last_used_at')
+    .select(
+      'id, title, suggested_angle, suggested_tone, additional_angles, additional_tones, target_slide_count, usage_count, last_used_at',
+    )
     .eq('project_id', projectId)
     .is('archived_at', null)
     .order('usage_count', { ascending: true })
@@ -424,6 +450,104 @@ async function pickEligibleTopic(
 
   if (error || !data || data.length === 0) return null;
   return data[0] as TopicRow;
+}
+
+/**
+ * Build the set of allowed values for a dimension on a topic. Always
+ * includes `suggested_*` (if present) plus everything in `additional_*`,
+ * deduplicated and with nulls/empties stripped. Order is preserved so the
+ * tie-breakers in `pickLeastUsedFromAllowed` get a deterministic input
+ * when usage counters are perfectly even.
+ */
+export function buildAllowedSet(
+  suggested: string | null,
+  additional: string[] | null,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (v: string | null | undefined): void => {
+    if (!v) return;
+    if (seen.has(v)) return;
+    seen.add(v);
+    out.push(v);
+  };
+  push(suggested);
+  for (const v of additional ?? []) push(v);
+  return out;
+}
+
+/**
+ * Pick the least-used value of `dimension` (angle | tone) for `projectId`,
+ * restricted to `allowed`. Mirrors the topic-picker ordering:
+ *   1. lowest usage_count first
+ *   2. on ties, oldest last_used_at first (NULL = never used = wins)
+ *   3. on full ties, preserve the order of `allowed` (so seeded defaults
+ *      win over additional_* when nothing has ever been used)
+ *
+ * Values in `allowed` that have no row in `carousel_dimension_usage` are
+ * treated as `usage_count=0, last_used_at=null` — i.e. they've never been
+ * used in this project, so they take priority over anything with a row.
+ *
+ * Returns null when `allowed` is empty. Returns the only element when
+ * `allowed.length === 1` (skipping the DB roundtrip).
+ *
+ * Exported for unit testing — the sort logic is pure given the usage map.
+ */
+export function selectLeastUsed(
+  allowed: string[],
+  usage: Map<string, { count: number; lastUsedAt: string | null }>,
+): string | null {
+  if (allowed.length === 0) return null;
+  // Stable sort: when both keys tie, original order wins.
+  const indexed = allowed.map((value, idx) => ({ value, idx }));
+  indexed.sort((a, b) => {
+    const ua = usage.get(a.value) ?? { count: 0, lastUsedAt: null };
+    const ub = usage.get(b.value) ?? { count: 0, lastUsedAt: null };
+    if (ua.count !== ub.count) return ua.count - ub.count;
+    if (ua.lastUsedAt === null && ub.lastUsedAt !== null) return -1;
+    if (ua.lastUsedAt !== null && ub.lastUsedAt === null) return 1;
+    if (ua.lastUsedAt !== null && ub.lastUsedAt !== null) {
+      const da = new Date(ua.lastUsedAt).getTime();
+      const db = new Date(ub.lastUsedAt).getTime();
+      if (da !== db) return da - db;
+    }
+    return a.idx - b.idx; // preserve allowed[] order on full ties
+  });
+  return indexed[0]!.value;
+}
+
+async function pickLeastUsedFromAllowed(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  projectId: string,
+  dimension: 'angle' | 'tone',
+  allowed: string[],
+): Promise<string | null> {
+  if (allowed.length === 0) return null;
+  if (allowed.length === 1) return allowed[0]!;
+
+  const { data, error } = await supabase
+    .from('carousel_dimension_usage')
+    .select('value, usage_count, last_used_at')
+    .eq('project_id', projectId)
+    .eq('dimension', dimension)
+    .in('value', allowed);
+
+  if (error) {
+    // Soft fail: pick the first allowed value so we still publish.
+    return allowed[0]!;
+  }
+
+  const usage = new Map<string, { count: number; lastUsedAt: string | null }>();
+  for (const row of (data ?? []) as Array<{
+    value: string;
+    usage_count: number;
+    last_used_at: string | null;
+  }>) {
+    usage.set(row.value, { count: row.usage_count, lastUsedAt: row.last_used_at });
+  }
+
+  return selectLeastUsed(allowed, usage);
 }
 
 // ---------------------------------------------------------------------------

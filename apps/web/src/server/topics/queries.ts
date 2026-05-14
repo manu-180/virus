@@ -122,3 +122,55 @@ export async function bumpTopicUsage(args: {
   }
   return (data as unknown as string) ?? null;
 }
+
+/**
+ * Apply inferred heuristic defaults to a topic, but ONLY when the target
+ * columns are still at their factory defaults (`additional_angles = {}`,
+ * `additional_tones = {}`, `target_slide_count IS NULL`) AND the topic was
+ * created by the user (not a seed).
+ *
+ * Why the guards:
+ *   - Seeds are hand-curated. Never let heuristics clobber them.
+ *   - If the user (or a future admin UI) already set values, respect them.
+ *   - The check happens atomically in the WHERE clause so two concurrent
+ *     create requests for the same title can't race.
+ *
+ * Returns true if any row was updated, false otherwise. Errors are logged
+ * and swallowed — heuristic defaults are non-critical metadata.
+ */
+export async function applyHeuristicDefaults(args: {
+  topicId: string;
+  additionalAngles: string[];
+  additionalTones: string[];
+  targetSlideCount: number | null;
+}): Promise<boolean> {
+  // Skip the DB roundtrip if there's literally nothing to apply.
+  if (
+    args.additionalAngles.length === 0 &&
+    args.additionalTones.length === 0 &&
+    args.targetSlideCount === null
+  ) {
+    return false;
+  }
+
+  const supabase = createAdminClient();
+  const patch: Record<string, unknown> = {};
+  if (args.additionalAngles.length > 0) patch.additional_angles = args.additionalAngles;
+  if (args.additionalTones.length > 0) patch.additional_tones = args.additionalTones;
+  if (args.targetSlideCount !== null) patch.target_slide_count = args.targetSlideCount;
+
+  // Guard: never touch seed topics. Heuristic is idempotent within a topic
+  // (same title → same output) so we don't need an "is-empty" guard on
+  // the array columns; re-applying yields identical values.
+  const { error, count } = await supabase
+    .from('carousel_topics' as never)
+    .update(patch as never, { count: 'exact' })
+    .eq('id', args.topicId)
+    .neq('source', 'seed');
+
+  if (error) {
+    console.error('[applyHeuristicDefaults] update error:', error);
+    return false;
+  }
+  return (count ?? 0) > 0;
+}

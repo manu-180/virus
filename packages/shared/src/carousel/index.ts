@@ -8,3 +8,4 @@ export * from './composer.js';
 export * from './composer-batch.js';
 export * from './fonts.js';
 export * from './state.js';
+export * from './heuristics.js';
