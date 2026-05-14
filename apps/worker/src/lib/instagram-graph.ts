@@ -23,8 +23,14 @@
  */
 
 const GRAPH_VERSION = 'v21.0';
-/** New Instagram Graph API — replaces graph.facebook.com for IG Business operations */
-const GRAPH_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
+/**
+ * Facebook Graph API base. Used for OAuth token exchange, Pages discovery,
+ * and Instagram Business content publishing. (We tried `graph.instagram.com`
+ * — the new Instagram Business Login API — but it's gated by Meta's
+ * dev-mode tester flow which is broken. The Facebook Login path is the one
+ * every mature scheduler uses.)
+ */
+const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -162,7 +168,8 @@ export interface ExchangeShortLivedResult {
 
 /**
  * Exchange a short-lived USER access token (from the OAuth code exchange)
- * for a long-lived one. The long-lived user token lasts ~60 days.
+ * for a long-lived one. The long-lived user token lasts ~60 days and is
+ * what we use to derive long-lived Page tokens.
  *
  * Then call {@link getPagesWithIgAccounts} with it.
  */
@@ -171,27 +178,26 @@ export async function exchangeForLongLivedUserToken(
   appId: string,
   appSecret: string,
 ): Promise<ExchangeShortLivedResult> {
-  // New Instagram Business Login: long-lived token via graph.instagram.com
-  const url = new URL('https://graph.instagram.com/access_token');
-  url.searchParams.set('grant_type', 'ig_exchange_token');
-  url.searchParams.set('client_id', appId);
-  url.searchParams.set('client_secret', appSecret);
-  url.searchParams.set('access_token', shortLivedToken);
-  const res = await fetch(url);
-  const body = await res.json() as { access_token: string; expires_in: number };
-  if (!res.ok) throw new InstagramGraphError({
-    code: 'token_exchange_failed',
-    message: JSON.stringify(body),
-    httpStatus: res.status,
-    terminal: true,
-    authError: true,
-  });
-  return { accessToken: body.access_token, expiresIn: body.expires_in };
+  const res = await graphCall<{ access_token: string; expires_in?: number }>(
+    'GET',
+    '/oauth/access_token',
+    {
+      grant_type: 'fb_exchange_token',
+      client_id: appId,
+      client_secret: appSecret,
+      fb_exchange_token: shortLivedToken,
+    },
+  );
+  return {
+    accessToken: res.access_token,
+    // Facebook sometimes omits expires_in for long-lived tokens — cap at 60d.
+    expiresIn: res.expires_in ?? 60 * 24 * 3600,
+  };
 }
 
 /**
- * Exchange the OAuth `code` (from the redirect) for a short-lived user token.
- * New Instagram Business Login: POST form body to api.instagram.com.
+ * Exchange the OAuth `code` (from the callback redirect) for a short-lived
+ * user access token. Facebook accepts GET with query-string params.
  */
 export async function exchangeCodeForUserToken(
   code: string,
@@ -199,26 +205,20 @@ export async function exchangeCodeForUserToken(
   appSecret: string,
   redirectUri: string,
 ): Promise<ExchangeShortLivedResult> {
-  const form = new URLSearchParams();
-  form.set('client_id', appId);
-  form.set('client_secret', appSecret);
-  form.set('grant_type', 'authorization_code');
-  form.set('redirect_uri', redirectUri);
-  form.set('code', code);
-  const res = await fetch('https://api.instagram.com/oauth/access_token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: form.toString(),
-  });
-  const body = await res.json() as { access_token: string; expires_in?: number };
-  if (!res.ok) throw new InstagramGraphError({
-    code: 'code_exchange_failed',
-    message: JSON.stringify(body),
-    httpStatus: res.status,
-    terminal: true,
-    authError: true,
-  });
-  return { accessToken: body.access_token, expiresIn: body.expires_in ?? 3600 };
+  const res = await graphCall<{ access_token: string; expires_in?: number }>(
+    'GET',
+    '/oauth/access_token',
+    {
+      client_id: appId,
+      client_secret: appSecret,
+      redirect_uri: redirectUri,
+      code,
+    },
+  );
+  return {
+    accessToken: res.access_token,
+    expiresIn: res.expires_in ?? 3600,
+  };
 }
 
 export interface PageWithIgAccount {

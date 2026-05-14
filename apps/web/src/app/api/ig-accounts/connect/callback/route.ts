@@ -46,13 +46,20 @@ export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code');
   const stateRaw = req.nextUrl.searchParams.get('state');
   const errorParam = req.nextUrl.searchParams.get('error');
+  const errorReason = req.nextUrl.searchParams.get('error_reason');
+  const errorDescription = req.nextUrl.searchParams.get('error_description');
 
   if (errorParam) {
+    // The user denied permissions (or closed the dialog).
+    const isCancelled =
+      errorReason === 'user_denied' || errorParam === 'access_denied';
     return redirectWithFlag(
       req,
       '/dashboard/settings/instagram',
-      'cancelled',
-      errorParam,
+      isCancelled ? 'cancelled' : 'error',
+      isCancelled
+        ? 'Cancelaste la autorización de Facebook'
+        : (errorDescription ?? errorParam),
     );
   }
   if (!code || !stateRaw) {
@@ -119,7 +126,7 @@ export async function GET(req: NextRequest) {
       req,
       state.returnTo,
       'no_pages',
-      'No se encontró una cuenta de Instagram Business o Creator vinculada',
+      'Tu cuenta de Facebook no tiene páginas con Instagram vinculado',
     );
   }
 
