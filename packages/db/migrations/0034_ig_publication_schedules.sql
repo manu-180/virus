@@ -32,10 +32,9 @@ CREATE TABLE IF NOT EXISTS public.ig_publication_schedules (
   target_hours_utc         int[]       NOT NULL DEFAULT ARRAY[13, 19]::int[]
                                        CHECK (
                                          array_length(target_hours_utc, 1) BETWEEN 1 AND 24
-                                         AND (
-                                           SELECT bool_and(h BETWEEN 0 AND 23)
-                                           FROM unnest(target_hours_utc) h
-                                         )
+                                         -- Postgres forbids subqueries in CHECK constraints, so we test
+                                         -- "every element is in [0..23]" via the contained-by operator.
+                                         AND target_hours_utc <@ ARRAY[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]::int[]
                                        ),
   jitter_minutes           int         NOT NULL DEFAULT 25
                                        CHECK (jitter_minutes BETWEEN 0 AND 60),
