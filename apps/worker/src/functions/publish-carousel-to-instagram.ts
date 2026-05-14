@@ -182,8 +182,12 @@ export const publishCarouselToInstagram = inngest.createFunction(
     });
 
     // ── 3. signed URLs for slides ───────────────────────────────────────────
+    // Slide lifecycle: pending → composing → ready (set by compose-carousel-overlay).
+    // We accept 'ready' (and the legacy 'done' alias) as publishable.
     const usableSlides = ctx.slides.filter(
-      (s) => s.status === 'done' && (s.composed_path || s.image_path),
+      (s) =>
+        (s.status === 'ready' || s.status === 'done') &&
+        (s.composed_path || s.image_path),
     );
     if (usableSlides.length < 2) {
       await step.run('mark-failed-insufficient-slides', async () => {
