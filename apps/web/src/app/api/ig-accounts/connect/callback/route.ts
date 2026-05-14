@@ -30,8 +30,23 @@ function envOrNull(name: string): string | null {
   return v && v.trim() ? v.trim() : null;
 }
 
+/**
+ * Build a redirect to a relative path on the PUBLIC origin (not the
+ * internal one). Railway / many container hosts pass `0.0.0.0:8080`
+ * as `req.url`'s host because that's the container-internal address.
+ * Falls back to `req.nextUrl.origin` for local dev where the env
+ * var isn't set.
+ */
+function publicOrigin(req: NextRequest): string {
+  const raw =
+    process.env.META_OAUTH_REDIRECT_BASE_URL ??
+    process.env.NEXT_PUBLIC_APP_URL ??
+    req.nextUrl.origin;
+  return raw.replace(/\/$/, '');
+}
+
 function redirectWithFlag(req: NextRequest, target: string, flag: string, message?: string) {
-  const url = new URL(target, req.url);
+  const url = new URL(target, publicOrigin(req));
   url.searchParams.set('connect', flag);
   if (message) url.searchParams.set('msg', message);
   return NextResponse.redirect(url);
