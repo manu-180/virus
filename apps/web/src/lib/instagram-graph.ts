@@ -67,6 +67,12 @@ export function buildAuthorizeUrl(opts: {
   u.searchParams.set('scope', META_OAUTH_SCOPES);
   u.searchParams.set('response_type', 'code');
   u.searchParams.set('state', opts.state);
+  // Force Instagram to re-prompt the user to pick which IG account to
+  // authorize. Without this, IG silently uses whichever account is
+  // currently logged in to the browser session — which is often the
+  // user's personal IG, not the Business/Creator account they want
+  // to connect.
+  u.searchParams.set('force_reauth', 'true');
   return u.toString();
 }
 
