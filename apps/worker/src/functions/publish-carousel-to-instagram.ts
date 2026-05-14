@@ -26,6 +26,7 @@ import {
   InstagramGraphError,
   publishCarousel as publishCarouselViaGraph,
 } from '../lib/instagram-graph.js';
+import { igAutoPublishOnPublishResult } from './auto-publish-scheduler.js';
 
 // ---------------------------------------------------------------------------
 // DB row shapes
@@ -254,6 +255,9 @@ export const publishCarouselToInstagram = inngest.createFunction(
         permalink: outcome.permalink,
         authType: account.auth_type,
       });
+      await step.run('schedule-on-success', async () => {
+        await igAutoPublishOnPublishResult(supabase, igAccountId, 'success');
+      });
       return { status: 'published', mediaId: outcome.mediaId };
     }
 
@@ -276,11 +280,17 @@ export const publishCarouselToInstagram = inngest.createFunction(
           .eq('id', igAccountId);
       });
       logger.warn('publish.auth_error', { publicationId, code, message });
+      await step.run('schedule-on-auth-error', async () => {
+        await igAutoPublishOnPublishResult(supabase, igAccountId, 'auth_error');
+      });
       return { status: 'failed', code, terminal: true, authError: true };
     }
 
     if (outcome.terminal) {
       logger.warn('publish.terminal_error', { publicationId, code, message });
+      await step.run('schedule-on-non-auth-terminal', async () => {
+        await igAutoPublishOnPublishResult(supabase, igAccountId, 'non_auth_error');
+      });
       return { status: 'failed', code, message, terminal: true };
     }
 

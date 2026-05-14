@@ -24,6 +24,7 @@ import {
   handleCarouselFailure,
   publishCarouselToInstagram,
   refreshIgGraphTokens,
+  autoPublishScheduler,
 } from './functions/orchestrator.js';
 import { detectTrends } from './functions/detect-trends.js';
 import { generateVideoProjectAware } from './functions/generate-video-project-aware.js';
@@ -49,6 +50,7 @@ export {
   handleCarouselFailure,
   publishCarouselToInstagram,
   refreshIgGraphTokens,
+  autoPublishScheduler,
   sweepStuckCarousels,
 };
 
@@ -72,5 +74,6 @@ export const functions = [
   handleCarouselFailure,
   publishCarouselToInstagram,
   refreshIgGraphTokens,
+  autoPublishScheduler,
   sweepStuckCarousels,
 ] as const;

@@ -27,9 +27,11 @@ import {
   ExternalLink,
   Info,
   ChevronDown,
+  CalendarClock,
 } from 'lucide-react';
 import { InstagramIcon as Instagram } from '@/components/icons/InstagramIcon';
 import { useActiveProject } from '@/lib/active-project/hook';
+import AutoPublishPanel from './AutoPublishPanel';
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement> & { className?: string }>;
 
@@ -85,6 +87,7 @@ export default function InstagramAccountsClient() {
   const [reloadKey, setReloadKey] = useState(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(false);
+  const [expandedScheduleId, setExpandedScheduleId] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -313,9 +316,10 @@ export default function InstagramAccountsClient() {
           const Icon = meta.Icon;
           const expDays = expiresDays(a.graph_token_expires_at);
           const isReconnectNeeded = a.status === 'challenge' || (expDays !== null && expDays < 7);
+          const isScheduleOpen = expandedScheduleId === a.id;
           return (
+            <div key={a.id} className="space-y-2">
             <div
-              key={a.id}
               className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-5 py-4 flex flex-wrap items-start justify-between gap-4"
             >
               <div className="flex items-start gap-3 min-w-0">
@@ -358,6 +362,20 @@ export default function InstagramAccountsClient() {
                     Reconectar
                   </button>
                 )}
+                {a.status === 'active' && (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedScheduleId((curr) => (curr === a.id ? null : a.id))}
+                    className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                      isScheduleOpen
+                        ? 'border-[#C8FF57]/50 bg-[#C8FF57]/10 text-[#C8FF57]'
+                        : 'border-white/15 bg-white/5 text-white/70 hover:text-white hover:border-white/30'
+                    }`}
+                  >
+                    <CalendarClock className="w-3 h-3" />
+                    Auto-publicar
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => handleDisconnect(a.id)}
@@ -367,6 +385,10 @@ export default function InstagramAccountsClient() {
                   {deletingId === a.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
                 </button>
               </div>
+            </div>
+            {isScheduleOpen && a.status === 'active' && (
+              <AutoPublishPanel igAccountId={a.id} igUsername={a.ig_username} />
+            )}
             </div>
           );
         })}
