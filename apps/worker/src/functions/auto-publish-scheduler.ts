@@ -46,6 +46,38 @@ const IDEMPOTENCY_WINDOW_MS = 15 * 60 * 1000;
 /** Auth-error counter threshold for auto-disable. */
 const MAX_CONSECUTIVE_AUTH_FAILURES = 3;
 
+/**
+ * Pick a slide count for an auto-generated carousel.
+ *
+ * We weight heavily around the schedule's `default_slide_count` but vary
+ * naturally so feeds don't look bot-uniform. Distribution (relative to
+ * the default, clamped to [3, 10]):
+ *
+ *   45% → default exactly
+ *   18% → default - 1
+ *   18% → default + 1
+ *   8%  → default - 2
+ *   8%  → default + 2
+ *   3%  → default - 3 (or +3 if there's no room below)
+ *
+ * Examples:
+ *   default=5 → 3..7 with mode 5
+ *   default=4 → 3..6 mostly (3 may bottom out)
+ */
+function pickSlideCount(defaultCount: number): number {
+  const r = Math.random();
+  let offset: number;
+  if (r < 0.45) offset = 0;
+  else if (r < 0.63) offset = -1;
+  else if (r < 0.81) offset = 1;
+  else if (r < 0.89) offset = -2;
+  else if (r < 0.97) offset = 2;
+  else offset = Math.random() < 0.5 ? -3 : 3;
+  const chosen = defaultCount + offset;
+  // Carousels must have 3..10 slides (IG limit; brief schema enforces this).
+  return Math.max(3, Math.min(10, chosen));
+}
+
 // ---------------------------------------------------------------------------
 // DB row shapes (typed via `any` because @virus/db hasn't been regenerated)
 // ---------------------------------------------------------------------------
@@ -233,11 +265,15 @@ export const autoPublishScheduler = inngest.createFunction(
         }
 
         // ── Create carousel_projects row ──────────────────────────────────
+        // Slide count varies organically around the schedule default to avoid
+        // bot-uniform output. See `pickSlideCount` for the distribution.
+        const chosenSlideCount = pickSlideCount(schedule.default_slide_count);
+
         const brief = {
           topic: topic.title,
           angle: topic.suggested_angle ?? schedule.default_angle,
           tone: topic.suggested_tone ?? schedule.default_tone,
-          slideCount: schedule.default_slide_count,
+          slideCount: chosenSlideCount,
           language: schedule.default_language,
         };
 
@@ -250,7 +286,7 @@ export const autoPublishScheduler = inngest.createFunction(
             status: 'pending',
             brief: JSON.stringify(brief),
             style_preset: schedule.default_style_preset,
-            slide_count: schedule.default_slide_count,
+            slide_count: chosenSlideCount,
             auto_publish_ig_account_id: schedule.ig_account_id,
           })
           .select('id')
