@@ -1,26 +1,31 @@
 /**
- * auto-publish-scheduler — Cron-driven IG carousel auto-publisher.
+ * auto-publish-scheduler — Cron-driven IG carousel GENERATOR + auto-publisher.
  *
  * Cron: every 10 min (`* /10 * * * *`)
  *
- * Phase 2 of the IG publishing pipeline. Manual publish stays as-is; this
- * function automates it for accounts the user has opted in to (one row in
- * `ig_publication_schedules` per account, `enabled = true`).
+ * Phase 3 of the IG publishing pipeline. The previous version picked an
+ * already-`ready` carousel and published it. This version **generates a
+ * brand-new carousel from scratch** inside every open window, marks it
+ * with `auto_publish_ig_account_id`, and relies on
+ * `generate-carousel-caption.ts` to auto-publish it once the pipeline
+ * reaches status='ready'.
  *
- * Per-tick flow (all in a single Inngest step):
- *   1. Load every enabled schedule joined with its ig_account.
+ * Per-tick flow:
+ *   1. Load every enabled schedule (joined with defaults).
  *   2. For each schedule, gate-check in order — first failing gate wins:
  *      - account.status != 'active'                                 → skip
- *      - post_count_24h >= posts_per_day (UI-configured daily cap)  → skip
+ *      - post_count_24h >= posts_per_day (UI cap)                   → skip
  *      - last_post_at + min_hours_between_posts > now()             → skip
  *      - now() not within any [target - jitter, target + jitter]    → skip
  *      - last_dispatched_at within last 15 min (idempotency)        → skip
- *      - no 'ready' carousel without an in-flight publication       → skip
- *   3. Random delay 0..9 min inside the tick to dispersar dentro
- *      del intervalo de cron (anti-pattern: posting at :00 every tick).
- *   4. Insert ig_publications (status='queued'), fire the
- *      `virus/carousel.publish.requested` event, stamp
- *      last_dispatched_at + last_carousel_id on the schedule.
+ *      - no eligible topic in carousel_topics                       → skip
+ *   3. Pick the least-used, oldest-used topic from the bank.
+ *   4. Insert a `carousel_projects` row (status='pending') with
+ *      `auto_publish_ig_account_id = schedule.ig_account_id`.
+ *   5. Bump the topic's usage counters.
+ *   6. Dispatch `virus/carousel.created` to kick off the existing pipeline.
+ *      (plan → slides → compose → captions → mark-ready → auto-publish hook)
+ *   7. Stamp `last_dispatched_at` + `last_carousel_id` on the schedule.
  *
  * Anti-ban defaults are encoded in the schema (CHECK constraints + defaults).
  * Auto-disable of dead tokens is handled by the publish function via
@@ -34,9 +39,6 @@ import { getAdminClient } from '../lib/supabase.js';
 // ---------------------------------------------------------------------------
 // Configuration constants
 // ---------------------------------------------------------------------------
-
-/** Max delay (ms) inserted inside a single 10-min tick to disperse posts. */
-const MAX_INTRA_TICK_DELAY_MS = 9 * 60 * 1000;
 
 /** Idempotency window: refuse to redispatch a schedule within this many ms. */
 const IDEMPOTENCY_WINDOW_MS = 15 * 60 * 1000;
@@ -58,6 +60,11 @@ interface ScheduleRow {
   jitter_minutes: number;
   min_hours_between_posts: number;
   last_dispatched_at: string | null;
+  default_angle: string;
+  default_tone: string;
+  default_slide_count: number;
+  default_style_preset: string;
+  default_language: string;
 }
 
 interface AccountRow {
@@ -70,8 +77,11 @@ interface AccountRow {
   deleted_at: string | null;
 }
 
-interface CarouselRow {
+interface TopicRow {
   id: string;
+  title: string;
+  suggested_angle: string | null;
+  suggested_tone: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -104,21 +114,13 @@ export function isWindowOpen(
 }
 
 // ---------------------------------------------------------------------------
-// Sleep helper (inline tiny utility — not worth a separate module)
-// ---------------------------------------------------------------------------
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// ---------------------------------------------------------------------------
 // Inngest function
 // ---------------------------------------------------------------------------
 
 export const autoPublishScheduler = inngest.createFunction(
   {
     id: 'auto-publish-scheduler',
-    name: 'Auto-publish carousels to Instagram (scheduler)',
+    name: 'Auto-generate + publish carousels to Instagram (scheduler)',
     // Single in-flight tick; cron firings overlap if a tick is slow.
     concurrency: { limit: 1 },
     retries: 0,
@@ -133,7 +135,7 @@ export const autoPublishScheduler = inngest.createFunction(
       const { data, error } = await (supabase as any)
         .from('ig_publication_schedules')
         .select(
-          'id, ig_account_id, user_id, enabled, posts_per_day, target_hours_utc, jitter_minutes, min_hours_between_posts, last_dispatched_at',
+          'id, ig_account_id, user_id, enabled, posts_per_day, target_hours_utc, jitter_minutes, min_hours_between_posts, last_dispatched_at, default_angle, default_tone, default_slide_count, default_style_preset, default_language',
         )
         .eq('enabled', true);
       if (error) {
@@ -150,7 +152,7 @@ export const autoPublishScheduler = inngest.createFunction(
     // ── 2. Walk schedules ───────────────────────────────────────────────────
     // We don't use step.run inside the loop because:
     //   - we want one log line per tick (atomic visibility)
-    //   - foreach attempt is independent + idempotent on the schedule cursor
+    //   - each schedule's attempt is independent + idempotent on the cursor
     //   - throwing inside a schedule shouldn't tank the whole tick
     const dispatched: string[] = [];
     const skipReasons: Record<string, number> = {};
@@ -218,83 +220,99 @@ export const autoPublishScheduler = inngest.createFunction(
           }
         }
 
-        // ── Find an eligible carousel ─────────────────────────────────────
-        // Oldest ready carousel for this project that has NEVER been
-        // queued/publishing/published on THIS account.
-        const carouselId = await pickEligibleCarousel(
-          supabase,
-          acct.project_id,
-          schedule.ig_account_id,
-        );
-        if (!carouselId) {
-          bumpSkip('no_carousel_ready');
+        // ── Pick eligible topic ───────────────────────────────────────────
+        const topic = await pickEligibleTopic(supabase, acct.project_id);
+        if (!topic) {
+          // Don't auto-disable: the user may add topics later. Just log + skip.
+          logger.warn('auto_publish.no_topics_available', {
+            scheduleId: schedule.id,
+            projectId: acct.project_id,
+          });
+          bumpSkip('no_topics_available');
           continue;
         }
 
-        // ── Load caption (mirror /api/carousels/[id]/publish-ig) ─────────
-        const caption = await loadCaption(supabase, carouselId);
-        if (!caption) {
-          bumpSkip('no_caption');
-          continue;
-        }
+        // ── Create carousel_projects row ──────────────────────────────────
+        const brief = {
+          topic: topic.title,
+          angle: topic.suggested_angle ?? schedule.default_angle,
+          tone: topic.suggested_tone ?? schedule.default_tone,
+          slideCount: schedule.default_slide_count,
+          language: schedule.default_language,
+        };
 
-        // ── Random intra-tick delay (anti-ban) ───────────────────────────
-        const delay = Math.floor(Math.random() * MAX_INTRA_TICK_DELAY_MS);
-        if (delay > 0) {
-          await sleep(delay);
-        }
-
-        // ── Insert publication row + send event ──────────────────────────
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: publication, error: insertErr } = await (supabase as any)
-          .from('ig_publications')
+        const { data: carousel, error: insertErr } = await (supabase as any)
+          .from('carousel_projects')
           .insert({
-            carousel_id: carouselId,
-            ig_account_id: schedule.ig_account_id,
+            project_id: acct.project_id,
             user_id: schedule.user_id,
-            caption,
-            first_comment: null,
-            status: 'queued',
+            status: 'pending',
+            brief: JSON.stringify(brief),
+            style_preset: schedule.default_style_preset,
+            slide_count: schedule.default_slide_count,
+            auto_publish_ig_account_id: schedule.ig_account_id,
           })
           .select('id')
           .single();
 
-        if (insertErr || !publication) {
-          logger.error('auto_publish.insert_failed', {
+        if (insertErr || !carousel) {
+          logger.error('auto_publish.carousel_insert_failed', {
             scheduleId: schedule.id,
             error: insertErr?.message,
           });
-          bumpSkip('insert_failed');
+          bumpSkip('carousel_insert_failed');
           continue;
         }
 
+        const carouselId = carousel.id as string;
+
+        // ── Bump topic usage (non-critical) ───────────────────────────────
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase as any)
+            .from('carousel_topics')
+            .update({
+              usage_count: ((topic as unknown as { usage_count?: number }).usage_count ?? 0) + 1,
+              last_used_at: new Date().toISOString(),
+            })
+            .eq('id', topic.id);
+        } catch (bumpErr) {
+          // Non-fatal: counter is metadata, not gating.
+          logger.warn('auto_publish.topic_bump_failed', {
+            topicId: topic.id,
+            error: bumpErr instanceof Error ? bumpErr.message : String(bumpErr),
+          });
+        }
+
+        // ── Dispatch carousel.created ─────────────────────────────────────
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await (inngest as any).send({
-            name: 'virus/carousel.publish.requested',
+            name: 'virus/carousel.created',
             data: {
-              publicationId: publication.id,
               carouselId,
-              igAccountId: schedule.ig_account_id,
               userId: schedule.user_id,
+              projectId: acct.project_id,
             },
           });
         } catch (sendErr) {
-          // Roll the publication to failed so we don't leak queued rows.
+          // Soft-delete the orphan carousel so it doesn't show up as
+          // "pending forever" in the user's list.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await (supabase as any)
-            .from('ig_publications')
+            .from('carousel_projects')
             .update({
+              deleted_at: new Date().toISOString(),
               status: 'failed',
-              error: {
-                code: 'dispatch_failed',
-                message: sendErr instanceof Error ? sendErr.message : String(sendErr),
-              },
+              error: 'auto_publish_dispatch_failed',
             })
-            .eq('id', publication.id);
+            .eq('id', carouselId);
+
           logger.error('auto_publish.dispatch_failed', {
             scheduleId: schedule.id,
-            publicationId: publication.id,
+            carouselId,
+            error: sendErr instanceof Error ? sendErr.message : String(sendErr),
           });
           bumpSkip('dispatch_failed');
           continue;
@@ -311,11 +329,12 @@ export const autoPublishScheduler = inngest.createFunction(
           .eq('id', schedule.id);
 
         dispatched.push(schedule.id);
-        logger.info('auto_publish.dispatched', {
+        logger.info('auto_publish.generated', {
           scheduleId: schedule.id,
           igAccountId: schedule.ig_account_id,
           carouselId,
-          publicationId: publication.id,
+          topicId: topic.id,
+          topicTitle: topic.title,
         });
       } catch (err) {
         // Don't let one bad schedule abort the others.
@@ -342,72 +361,33 @@ export const autoPublishScheduler = inngest.createFunction(
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the id of the oldest 'ready' carousel for `projectId` that has no
- * in-flight or completed publication for `igAccountId`.
+ * Picks the least-used, oldest-last-used topic for the given project from
+ * `carousel_topics`. Skips archived topics. Returns null if the bank is empty.
  *
- * We need to filter on "no row in ig_publications matching this (carousel,
- * account) with status in (queued, publishing, published)". The simplest path
- * via supabase-js is two round-trips: (a) get candidate ids, (b) filter out
- * those already publishing. We keep both small (LIMIT 25) so the cost stays
- * bounded.
+ * Ordering rationale:
+ *   - `usage_count ASC` → favour topics we've never (or rarely) used.
+ *   - `last_used_at ASC NULLS FIRST` (via COALESCE) → among ties, rotate the
+ *     ones that have sat the longest.
+ *
+ * The result includes `usage_count` so the caller can do an in-place +1
+ * without an extra round trip; we read it via an unsafe cast at the call site.
  */
-async function pickEligibleCarousel(
+async function pickEligibleTopic(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   projectId: string,
-  igAccountId: string,
-): Promise<string | null> {
-  const { data: candidates, error } = await supabase
-    .from('carousel_projects')
-    .select('id')
-    .eq('project_id', projectId)
-    .eq('status', 'ready')
-    .is('deleted_at', null)
-    .order('created_at', { ascending: true })
-    .limit(25);
-
-  if (error || !candidates || candidates.length === 0) return null;
-
-  const ids = (candidates as CarouselRow[]).map((r) => r.id);
-
-  const { data: blocked, error: blockedErr } = await supabase
-    .from('ig_publications')
-    .select('carousel_id')
-    .in('carousel_id', ids)
-    .eq('ig_account_id', igAccountId)
-    .in('status', ['queued', 'publishing', 'published']);
-
-  if (blockedErr) return null;
-
-  const blockedSet = new Set<string>(
-    ((blocked ?? []) as { carousel_id: string }[]).map((r) => r.carousel_id),
-  );
-
-  for (const id of ids) {
-    if (!blockedSet.has(id)) return id;
-  }
-  return null;
-}
-
-/**
- * Loads the selected caption text for a carousel; falls back to variant 0.
- * Mirrors the logic in apps/web/src/app/api/carousels/[id]/publish-ig/route.ts.
- */
-async function loadCaption(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
-  carouselId: string,
-): Promise<string | null> {
+): Promise<TopicRow | null> {
   const { data, error } = await supabase
-    .from('carousel_captions')
-    .select('text, variant_idx, selected')
-    .eq('carousel_id', carouselId)
-    .order('variant_idx', { ascending: true });
+    .from('carousel_topics')
+    .select('id, title, suggested_angle, suggested_tone, usage_count, last_used_at')
+    .eq('project_id', projectId)
+    .is('archived_at', null)
+    .order('usage_count', { ascending: true })
+    .order('last_used_at', { ascending: true, nullsFirst: true })
+    .limit(1);
 
   if (error || !data || data.length === 0) return null;
-  const rows = data as { text: string; variant_idx: number; selected: boolean }[];
-  const sel = rows.find((c) => c.selected);
-  return (sel ?? rows[0])?.text ?? null;
+  return data[0] as TopicRow;
 }
 
 // ---------------------------------------------------------------------------

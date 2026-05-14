@@ -17,11 +17,20 @@
  */
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Loader2, Save, Calendar, AlertTriangle } from 'lucide-react';
-import type {
-  IgPublicationSchedule,
-  ScheduleWindowPreview,
-  UpdateSchedulePayload,
+import { Loader2, Save, Calendar, AlertTriangle, Sparkles } from 'lucide-react';
+import {
+  DEFAULT_SCHEDULE,
+  SCHEDULE_ANGLES,
+  SCHEDULE_LANGUAGES,
+  SCHEDULE_STYLE_PRESETS,
+  SCHEDULE_TONES,
+  type IgPublicationSchedule,
+  type ScheduleAngle,
+  type ScheduleLanguage,
+  type ScheduleStylePreset,
+  type ScheduleTone,
+  type ScheduleWindowPreview,
+  type UpdateSchedulePayload,
 } from '@/lib/types/ig';
 
 // Argentina: UTC-3, no DST (Telecomm Law 26.350, in effect since 2009).
@@ -61,8 +70,39 @@ interface ScheduleResponse {
     target_hours_utc: number[];
     jitter_minutes: number;
     min_hours_between_posts: number;
+    default_angle?: ScheduleAngle;
+    default_tone?: ScheduleTone;
+    default_slide_count?: number;
+    default_style_preset?: ScheduleStylePreset;
+    default_language?: ScheduleLanguage;
   };
 }
+
+const ANGLE_LABELS: Record<ScheduleAngle, string> = {
+  educational: 'Educativo',
+  contrarian: 'Contrarian',
+  'story-arc': 'Storytelling',
+  'before-after': 'Antes / Después',
+  listicle: 'Listicle',
+};
+
+const TONE_LABELS: Record<ScheduleTone, string> = {
+  direct: 'Directo',
+  authoritative: 'Autoridad',
+  casual: 'Casual',
+  contrarian: 'Contrarian',
+};
+
+const STYLE_LABELS: Record<ScheduleStylePreset, string> = {
+  minimal: 'Minimal',
+  bold: 'Bold',
+  editorial: 'Editorial',
+};
+
+const LANG_LABELS: Record<ScheduleLanguage, string> = {
+  es: 'Español',
+  en: 'English',
+};
 
 const HOUR_CHIPS_LOCAL = Array.from({ length: 24 }, (_, i) => i);
 
@@ -76,6 +116,20 @@ export default function AutoPublishPanel({ igAccountId, igUsername }: Props) {
   const [targetHoursUtc, setTargetHoursUtc] = useState<number[]>([13, 19]);
   const [jitterMinutes, setJitterMinutes] = useState(25);
   const [minHoursBetween, setMinHoursBetween] = useState(4);
+
+  // Generation defaults — these populate the brief when the cron generates
+  // a new carousel inside an open window.
+  const [defaultAngle, setDefaultAngle] = useState<ScheduleAngle>(DEFAULT_SCHEDULE.default_angle);
+  const [defaultTone, setDefaultTone] = useState<ScheduleTone>(DEFAULT_SCHEDULE.default_tone);
+  const [defaultSlideCount, setDefaultSlideCount] = useState<number>(
+    DEFAULT_SCHEDULE.default_slide_count,
+  );
+  const [defaultStylePreset, setDefaultStylePreset] = useState<ScheduleStylePreset>(
+    DEFAULT_SCHEDULE.default_style_preset,
+  );
+  const [defaultLanguage, setDefaultLanguage] = useState<ScheduleLanguage>(
+    DEFAULT_SCHEDULE.default_language,
+  );
 
   const [disabledReason, setDisabledReason] = useState<string | null>(null);
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
@@ -104,6 +158,11 @@ export default function AutoPublishPanel({ igAccountId, igUsername }: Props) {
         setDisabledReason(s.disabled_reason ?? null);
         setConsecutiveFailures(s.consecutive_failures ?? 0);
         setLastDispatched(s.last_dispatched_at ?? null);
+        setDefaultAngle(s.default_angle ?? DEFAULT_SCHEDULE.default_angle);
+        setDefaultTone(s.default_tone ?? DEFAULT_SCHEDULE.default_tone);
+        setDefaultSlideCount(s.default_slide_count ?? DEFAULT_SCHEDULE.default_slide_count);
+        setDefaultStylePreset(s.default_style_preset ?? DEFAULT_SCHEDULE.default_style_preset);
+        setDefaultLanguage(s.default_language ?? DEFAULT_SCHEDULE.default_language);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Error cargando configuración');
       } finally {
@@ -195,6 +254,11 @@ export default function AutoPublishPanel({ igAccountId, igUsername }: Props) {
         target_hours_utc: targetHoursUtc,
         jitter_minutes: jitterMinutes,
         min_hours_between_posts: minHoursBetween,
+        default_angle: defaultAngle,
+        default_tone: defaultTone,
+        default_slide_count: defaultSlideCount,
+        default_style_preset: defaultStylePreset,
+        default_language: defaultLanguage,
       };
       const res = await fetch(`/api/ig-accounts/${igAccountId}/schedule`, {
         method: 'PUT',
@@ -230,10 +294,16 @@ export default function AutoPublishPanel({ igAccountId, igUsername }: Props) {
   return (
     <div className="rounded-lg border border-white/[0.08] bg-black/30 px-5 py-4 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-white flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-[#C8FF57]" />
-          Auto-publicar @{igUsername}
-        </p>
+        <div>
+          <p className="text-sm font-semibold text-white flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-[#C8FF57]" />
+            Auto-generar + publicar en @{igUsername}
+          </p>
+          <p className="text-[11px] text-white/50 mt-0.5 flex items-center gap-1">
+            <Sparkles className="w-3 h-3 text-[#C8FF57]/80" />
+            En cada ventana, el sistema genera un carrusel nuevo y lo publica solo.
+          </p>
+        </div>
         <SwitchToggle
           checked={enabled}
           onChange={setEnabled}
@@ -319,10 +389,69 @@ export default function AutoPublishPanel({ igAccountId, igUsername }: Props) {
         />
       </FieldRow>
 
+      {/* ── Defaults de generación ─────────────────────────────────────── */}
+      <div className="rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-3 space-y-3">
+        <p className="text-[11px] uppercase tracking-wider text-white/50 flex items-center gap-1.5">
+          <Sparkles className="w-3 h-3 text-[#C8FF57]" />
+          Defaults para los carruseles auto-generados
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <FieldRow label="Ángulo">
+            <SelectInput
+              value={defaultAngle}
+              onChange={(v) => setDefaultAngle(v as ScheduleAngle)}
+              options={SCHEDULE_ANGLES.map((a) => ({ value: a, label: ANGLE_LABELS[a] }))}
+            />
+          </FieldRow>
+
+          <FieldRow label="Tono">
+            <SelectInput
+              value={defaultTone}
+              onChange={(v) => setDefaultTone(v as ScheduleTone)}
+              options={SCHEDULE_TONES.map((t) => ({ value: t, label: TONE_LABELS[t] }))}
+            />
+          </FieldRow>
+
+          <FieldRow label={`Slides: ${defaultSlideCount}`}>
+            <input
+              type="range"
+              min={3}
+              max={10}
+              step={1}
+              value={defaultSlideCount}
+              onChange={(e) => setDefaultSlideCount(Number(e.target.value))}
+              className="w-full accent-[#C8FF57]"
+            />
+          </FieldRow>
+
+          <FieldRow label="Estilo visual">
+            <SelectInput
+              value={defaultStylePreset}
+              onChange={(v) => setDefaultStylePreset(v as ScheduleStylePreset)}
+              options={SCHEDULE_STYLE_PRESETS.map((s) => ({ value: s, label: STYLE_LABELS[s] }))}
+            />
+          </FieldRow>
+
+          <FieldRow label="Idioma">
+            <SelectInput
+              value={defaultLanguage}
+              onChange={(v) => setDefaultLanguage(v as ScheduleLanguage)}
+              options={SCHEDULE_LANGUAGES.map((l) => ({ value: l, label: LANG_LABELS[l] }))}
+            />
+          </FieldRow>
+        </div>
+
+        <p className="text-[10px] text-white/40 leading-relaxed">
+          Los temas salen del banco del proyecto (Carruseles → Temas). Si un tema
+          define ángulo o tono propios, esos pisan a los defaults.
+        </p>
+      </div>
+
       {/* Preview */}
       <div className="rounded-md border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
         <p className="text-[11px] uppercase tracking-wider text-white/40 mb-1.5">
-          Próximas publicaciones {previewLoading && <Loader2 className="inline w-3 h-3 animate-spin ml-1" />}
+          Próximas generaciones + publicaciones {previewLoading && <Loader2 className="inline w-3 h-3 animate-spin ml-1" />}
         </p>
         {previewToShow.length === 0 ? (
           <p className="text-xs text-white/40 italic">Elegí al menos una hora.</p>
@@ -375,6 +504,30 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
       <p className="text-xs text-white/60">{label}</p>
       <div className="flex flex-wrap items-center gap-2">{children}</div>
     </div>
+  );
+}
+
+function SelectInput({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full rounded-md border border-white/15 bg-white/5 px-2 py-1 text-sm text-white focus:outline-none focus:border-white/30"
+    >
+      {options.map((opt) => (
+        <option key={opt.value} value={opt.value} className="bg-[#111318]">
+          {opt.label}
+        </option>
+      ))}
+    </select>
   );
 }
 

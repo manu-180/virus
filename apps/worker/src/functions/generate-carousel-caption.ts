@@ -371,6 +371,161 @@ export const generateCarouselCaption = inngest.createFunction(
     });
 
     // ------------------------------------------------------------------
+    // 4b. Auto-publish hook
+    //
+    // If the carousel was created by the auto-publish-scheduler it has
+    // `auto_publish_ig_account_id` set. We open the IG publish pipeline
+    // here exactly as POST /api/carousels/[id]/publish-ig would:
+    //   - pick caption (selected or variant 0)
+    //   - insert ig_publications (status='queued')
+    //   - emit virus/carousel.publish.requested
+    //
+    // Idempotent: if a publication for (carousel, account) is already in
+    // queued/publishing/published state, we skip silently. This protects
+    // against double-runs of this step (Inngest retries).
+    // ------------------------------------------------------------------
+    await step.run('auto-publish-if-marked', async () => {
+      const db = getAdminClient();
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: row, error: rowErr } = await (db as any)
+        .from('carousel_projects')
+        .select('auto_publish_ig_account_id')
+        .eq('id', carouselId)
+        .single();
+
+      if (rowErr || !row) {
+        console.warn(JSON.stringify({
+          fn: 'generate-carousel-caption',
+          step: 'auto-publish-if-marked',
+          carouselId,
+          skipped: 'project_lookup_failed',
+          error: rowErr?.message,
+        }));
+        return;
+      }
+
+      const igAccountId = (row as { auto_publish_ig_account_id: string | null })
+        .auto_publish_ig_account_id;
+      if (!igAccountId) {
+        // Manual flow — nothing to do.
+        return;
+      }
+
+      // Idempotency: skip if a publication for this (carousel, account)
+      // is already in flight or done.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: existing } = await (db as any)
+        .from('ig_publications')
+        .select('id, status')
+        .eq('carousel_id', carouselId)
+        .eq('ig_account_id', igAccountId)
+        .in('status', ['queued', 'publishing', 'published'])
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        console.log(JSON.stringify({
+          fn: 'generate-carousel-caption',
+          step: 'auto-publish-if-marked',
+          carouselId,
+          igAccountId,
+          skipped: 'already_in_flight',
+          publicationId: existing[0].id,
+        }));
+        return;
+      }
+
+      // Resolve caption: selected variant if any, else variant_idx 0.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: capRows } = await (db as any)
+        .from('carousel_captions')
+        .select('text, variant_idx, selected')
+        .eq('carousel_id', carouselId)
+        .order('variant_idx', { ascending: true });
+
+      const captions = (capRows ?? []) as { text: string; variant_idx: number; selected: boolean }[];
+      const caption = captions.find((c) => c.selected)?.text ?? captions[0]?.text ?? null;
+      if (!caption) {
+        console.warn(JSON.stringify({
+          fn: 'generate-carousel-caption',
+          step: 'auto-publish-if-marked',
+          carouselId,
+          igAccountId,
+          skipped: 'no_caption',
+        }));
+        return;
+      }
+
+      // Insert publication
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: publication, error: insErr } = await (db as any)
+        .from('ig_publications')
+        .insert({
+          carousel_id: carouselId,
+          ig_account_id: igAccountId,
+          user_id: userId,
+          caption,
+          first_comment: null,
+          status: 'queued',
+        })
+        .select('id')
+        .single();
+
+      if (insErr || !publication) {
+        console.error(JSON.stringify({
+          fn: 'generate-carousel-caption',
+          step: 'auto-publish-if-marked',
+          carouselId,
+          igAccountId,
+          error: insErr?.message ?? 'insert_failed',
+        }));
+        return;
+      }
+
+      // Dispatch publish event
+      try {
+        await inngest.send({
+          name: 'virus/carousel.publish.requested',
+          data: {
+            publicationId: publication.id,
+            carouselId,
+            igAccountId,
+            userId,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any,
+        });
+      } catch (sendErr) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (db as any)
+          .from('ig_publications')
+          .update({
+            status: 'failed',
+            error: { code: 'dispatch_failed', message: 'Could not enqueue publish event.' },
+          })
+          .eq('id', publication.id);
+
+        console.error(JSON.stringify({
+          fn: 'generate-carousel-caption',
+          step: 'auto-publish-if-marked',
+          carouselId,
+          igAccountId,
+          publicationId: publication.id,
+          error: sendErr instanceof Error ? sendErr.message : String(sendErr),
+        }));
+        return;
+      }
+
+      console.log(JSON.stringify({
+        fn: 'generate-carousel-caption',
+        step: 'auto-publish-if-marked',
+        carouselId,
+        igAccountId,
+        publicationId: publication.id,
+        ok: true,
+      }));
+    });
+
+    // ------------------------------------------------------------------
     // 5. Emit completion event
     // ------------------------------------------------------------------
     await step.sendEvent('emit-carousel-completed', {

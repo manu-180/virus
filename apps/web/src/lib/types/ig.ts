@@ -9,6 +9,19 @@
  *   - apps/worker/src/functions/auto-publish-scheduler.ts
  */
 
+export type ScheduleAngle =
+  | 'educational'
+  | 'contrarian'
+  | 'story-arc'
+  | 'before-after'
+  | 'listicle';
+
+export type ScheduleTone = 'direct' | 'authoritative' | 'casual' | 'contrarian';
+
+export type ScheduleStylePreset = 'minimal' | 'bold' | 'editorial';
+
+export type ScheduleLanguage = 'es' | 'en';
+
 export interface IgPublicationSchedule {
   id: string;
   ig_account_id: string;
@@ -28,6 +41,16 @@ export interface IgPublicationSchedule {
   last_carousel_id: string | null;
   /** Set when the worker auto-disables (e.g. 'token_expired'). */
   disabled_reason: string | null;
+  /** Default angle used when generating an auto-scheduled carousel. */
+  default_angle: ScheduleAngle;
+  /** Default tone used when generating an auto-scheduled carousel. */
+  default_tone: ScheduleTone;
+  /** Slide count (3..10) for auto-generated carousels. */
+  default_slide_count: number;
+  /** Visual preset for auto-generated carousels. */
+  default_style_preset: ScheduleStylePreset;
+  /** Output language for auto-generated carousels. */
+  default_language: ScheduleLanguage;
   created_at: string;
   updated_at: string;
 }
@@ -44,6 +67,11 @@ export const DEFAULT_SCHEDULE: Omit<
   target_hours_utc: [13, 19],
   jitter_minutes: 25,
   min_hours_between_posts: 4,
+  default_angle: 'educational',
+  default_tone: 'direct',
+  default_slide_count: 5,
+  default_style_preset: 'bold',
+  default_language: 'es',
 };
 
 /** Body accepted by PUT /api/ig-accounts/[id]/schedule. */
@@ -53,7 +81,35 @@ export interface UpdateSchedulePayload {
   target_hours_utc: number[];
   jitter_minutes: number;
   min_hours_between_posts: number;
+  default_angle: ScheduleAngle;
+  default_tone: ScheduleTone;
+  default_slide_count: number;
+  default_style_preset: ScheduleStylePreset;
+  default_language: ScheduleLanguage;
 }
+
+export const SCHEDULE_ANGLES: readonly ScheduleAngle[] = [
+  'educational',
+  'contrarian',
+  'story-arc',
+  'before-after',
+  'listicle',
+] as const;
+
+export const SCHEDULE_TONES: readonly ScheduleTone[] = [
+  'direct',
+  'authoritative',
+  'casual',
+  'contrarian',
+] as const;
+
+export const SCHEDULE_STYLE_PRESETS: readonly ScheduleStylePreset[] = [
+  'minimal',
+  'bold',
+  'editorial',
+] as const;
+
+export const SCHEDULE_LANGUAGES: readonly ScheduleLanguage[] = ['es', 'en'] as const;
 
 /** Item in the response of GET /api/ig-accounts/[id]/schedule/preview. */
 export interface ScheduleWindowPreview {

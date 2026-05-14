@@ -21,7 +21,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import {
   DEFAULT_SCHEDULE,
+  SCHEDULE_ANGLES,
+  SCHEDULE_LANGUAGES,
+  SCHEDULE_STYLE_PRESETS,
+  SCHEDULE_TONES,
   type IgPublicationSchedule,
+  type ScheduleAngle,
+  type ScheduleLanguage,
+  type ScheduleStylePreset,
+  type ScheduleTone,
   type UpdateSchedulePayload,
 } from '@/lib/types/ig';
 
@@ -70,12 +78,64 @@ function validatePayload(raw: unknown): UpdateSchedulePayload | { error: string 
     return { error: 'min_hours_between_posts_out_of_range' };
   }
 
+  // Generation defaults — required so a freshly-enabled schedule always has
+  // a valid brief to feed the worker. We accept missing values for backward
+  // compatibility (older UI versions) and fall back to DEFAULT_SCHEDULE.
+  const angle: ScheduleAngle = (SCHEDULE_ANGLES as readonly string[]).includes(o.default_angle)
+    ? (o.default_angle as ScheduleAngle)
+    : DEFAULT_SCHEDULE.default_angle;
+  if (o.default_angle !== undefined && o.default_angle !== angle) {
+    return { error: 'default_angle_invalid' };
+  }
+
+  const tone: ScheduleTone = (SCHEDULE_TONES as readonly string[]).includes(o.default_tone)
+    ? (o.default_tone as ScheduleTone)
+    : DEFAULT_SCHEDULE.default_tone;
+  if (o.default_tone !== undefined && o.default_tone !== tone) {
+    return { error: 'default_tone_invalid' };
+  }
+
+  let slideCount = DEFAULT_SCHEDULE.default_slide_count;
+  if (o.default_slide_count !== undefined) {
+    if (
+      !Number.isInteger(o.default_slide_count) ||
+      o.default_slide_count < 3 ||
+      o.default_slide_count > 10
+    ) {
+      return { error: 'default_slide_count_out_of_range' };
+    }
+    slideCount = o.default_slide_count;
+  }
+
+  const stylePreset: ScheduleStylePreset = (SCHEDULE_STYLE_PRESETS as readonly string[]).includes(
+    o.default_style_preset,
+  )
+    ? (o.default_style_preset as ScheduleStylePreset)
+    : DEFAULT_SCHEDULE.default_style_preset;
+  if (o.default_style_preset !== undefined && o.default_style_preset !== stylePreset) {
+    return { error: 'default_style_preset_invalid' };
+  }
+
+  const language: ScheduleLanguage = (SCHEDULE_LANGUAGES as readonly string[]).includes(
+    o.default_language,
+  )
+    ? (o.default_language as ScheduleLanguage)
+    : DEFAULT_SCHEDULE.default_language;
+  if (o.default_language !== undefined && o.default_language !== language) {
+    return { error: 'default_language_invalid' };
+  }
+
   return {
     enabled: o.enabled,
     posts_per_day: o.posts_per_day,
     target_hours_utc: dedupedHours,
     jitter_minutes: o.jitter_minutes,
     min_hours_between_posts: o.min_hours_between_posts,
+    default_angle: angle,
+    default_tone: tone,
+    default_slide_count: slideCount,
+    default_style_preset: stylePreset,
+    default_language: language,
   };
 }
 
@@ -128,7 +188,7 @@ export async function GET(
     const { data, error } = await (supabase as AnyTable)
       .from('ig_publication_schedules')
       .select(
-        'id, ig_account_id, user_id, enabled, posts_per_day, target_hours_utc, jitter_minutes, min_hours_between_posts, consecutive_failures, last_dispatched_at, last_carousel_id, disabled_reason, created_at, updated_at',
+        'id, ig_account_id, user_id, enabled, posts_per_day, target_hours_utc, jitter_minutes, min_hours_between_posts, consecutive_failures, last_dispatched_at, last_carousel_id, disabled_reason, default_angle, default_tone, default_slide_count, default_style_preset, default_language, created_at, updated_at',
       )
       .eq('ig_account_id', id)
       .maybeSingle();
@@ -190,6 +250,11 @@ export async function PUT(
       target_hours_utc: parsed.target_hours_utc,
       jitter_minutes: parsed.jitter_minutes,
       min_hours_between_posts: parsed.min_hours_between_posts,
+      default_angle: parsed.default_angle,
+      default_tone: parsed.default_tone,
+      default_slide_count: parsed.default_slide_count,
+      default_style_preset: parsed.default_style_preset,
+      default_language: parsed.default_language,
     };
     if (parsed.enabled) {
       upsertRow['consecutive_failures'] = 0;
@@ -200,7 +265,7 @@ export async function PUT(
       .from('ig_publication_schedules')
       .upsert(upsertRow, { onConflict: 'ig_account_id' })
       .select(
-        'id, ig_account_id, user_id, enabled, posts_per_day, target_hours_utc, jitter_minutes, min_hours_between_posts, consecutive_failures, last_dispatched_at, last_carousel_id, disabled_reason, created_at, updated_at',
+        'id, ig_account_id, user_id, enabled, posts_per_day, target_hours_utc, jitter_minutes, min_hours_between_posts, consecutive_failures, last_dispatched_at, last_carousel_id, disabled_reason, default_angle, default_tone, default_slide_count, default_style_preset, default_language, created_at, updated_at',
       )
       .single();
 
