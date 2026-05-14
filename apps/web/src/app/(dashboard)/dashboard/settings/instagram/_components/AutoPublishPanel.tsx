@@ -110,6 +110,7 @@ export default function AutoPublishPanel({ igAccountId, igUsername }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
 
   const [enabled, setEnabled] = useState(false);
   const [postsPerDay, setPostsPerDay] = useState(2);
@@ -247,6 +248,7 @@ export default function AutoPublishPanel({ igAccountId, igUsername }: Props) {
     }
     setSaving(true);
     setError(null);
+    setSavedAt(null);
     try {
       const payload: UpdateSchedulePayload = {
         enabled,
@@ -276,6 +278,8 @@ export default function AutoPublishPanel({ igAccountId, igUsername }: Props) {
         setDisabledReason(null);
         setConsecutiveFailures(0);
       }
+      // Flash success badge for a few seconds.
+      setSavedAt(Date.now());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al guardar');
     } finally {
@@ -481,7 +485,12 @@ export default function AutoPublishPanel({ igAccountId, igUsername }: Props) {
         </div>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex justify-end items-center gap-3">
+        {savedAt && Date.now() - savedAt < 4000 && (
+          <span className="text-xs text-emerald-400 font-medium">
+            ✓ Guardado
+          </span>
+        )}
         <button
           type="button"
           onClick={handleSave}
