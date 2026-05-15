@@ -17,6 +17,7 @@ import {
   selectLeastUsed,
   isWindowOpen,
   effectiveIdempotencyMs,
+  effectivePostCount24h,
 } from '../auto-publish-scheduler.js';
 
 describe('buildAllowedSet', () => {
@@ -179,5 +180,36 @@ describe('effectiveIdempotencyMs', () => {
     // per window. The fix MUST return at least 2h = 120 min.
     const idem = effectiveIdempotencyMs(60);
     expect(idem).toBeGreaterThanOrEqual(120 * MIN);
+  });
+});
+
+describe('effectivePostCount24h', () => {
+  const now = new Date('2026-05-15T17:00:00Z');
+
+  it('returns the raw count when the window is fresh', () => {
+    const resetAt = new Date('2026-05-15T10:00:00Z').toISOString(); // 7h ago
+    expect(effectivePostCount24h(2, resetAt, now)).toBe(2);
+  });
+
+  it('returns 0 when the window is older than 24h', () => {
+    const resetAt = new Date('2026-05-14T10:00:00Z').toISOString(); // 31h ago
+    expect(effectivePostCount24h(2, resetAt, now)).toBe(0);
+  });
+
+  it('returns the raw count exactly at the 24h boundary', () => {
+    const resetAt = new Date('2026-05-14T17:00:00Z').toISOString(); // exactly 24h
+    expect(effectivePostCount24h(2, resetAt, now)).toBe(2);
+  });
+
+  it('falls back to the raw count when resetAt is null', () => {
+    expect(effectivePostCount24h(3, null, now)).toBe(3);
+  });
+
+  it('dead-lock scenario: a stale cap must read as 0 so the scheduler unblocks', () => {
+    // The bug: post_count_24h is only reset by the publish-time RPC. If the
+    // scheduler skips on the cap it never publishes → never resets → the
+    // counter is stuck at the cap forever. A >24h-old window MUST read 0.
+    const stuck = new Date('2026-05-13T21:00:00Z').toISOString(); // ~44h ago
+    expect(effectivePostCount24h(2, stuck, now)).toBe(0);
   });
 });

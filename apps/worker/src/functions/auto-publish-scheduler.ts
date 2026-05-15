@@ -74,6 +74,32 @@ export function effectiveIdempotencyMs(jitterMinutes: number): number {
 /** Auth-error counter threshold for auto-disable. */
 const MAX_CONSECUTIVE_AUTH_FAILURES = 3;
 
+/** Rolling window for the daily post counter. Mirrors the DB RPC. */
+const POST_COUNT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Effective value of `post_count_24h` as the scheduler should read it.
+ *
+ * The raw column is reset lazily by `ig_account_try_increment_post_count`,
+ * and ONLY when that RPC runs — i.e. at publish time. The scheduler's
+ * daily-cap gate reads the raw column, so without this the counter would
+ * dead-lock: once it hits the cap the scheduler skips → never dispatches →
+ * never publishes → never calls the RPC → the counter is never reset → the
+ * schedule is silently dead forever.
+ *
+ * This applies the RPC's own reset rule on the read side: if the counter's
+ * window is older than 24h, the effective count is 0.
+ */
+export function effectivePostCount24h(
+  rawCount: number,
+  resetAt: string | null,
+  now: Date,
+): number {
+  if (!resetAt) return rawCount;
+  const ageMs = now.getTime() - new Date(resetAt).getTime();
+  return ageMs > POST_COUNT_WINDOW_MS ? 0 : rawCount;
+}
+
 /**
  * Carousel statuses that count as "still in flight" — the scheduler must NOT
  * spawn a second auto-publish carousel for the same IG account while one of
@@ -154,6 +180,7 @@ interface AccountRow {
   status: string;
   project_id: string;
   post_count_24h: number;
+  post_count_24h_reset_at: string | null;
   daily_post_limit: number;
   last_post_at: string | null;
   deleted_at: string | null;
@@ -280,7 +307,7 @@ export const autoPublishScheduler = inngest.createFunction(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: account, error: acctErr } = await (supabase as any)
           .from('ig_accounts')
-          .select('id, status, project_id, post_count_24h, daily_post_limit, last_post_at, deleted_at')
+          .select('id, status, project_id, post_count_24h, post_count_24h_reset_at, daily_post_limit, last_post_at, deleted_at')
           .eq('id', schedule.ig_account_id)
           .single();
 
@@ -300,7 +327,12 @@ export const autoPublishScheduler = inngest.createFunction(
         }
 
         const dailyCap = Math.min(schedule.posts_per_day, acct.daily_post_limit);
-        if (acct.post_count_24h >= dailyCap) {
+        const effectiveCount = effectivePostCount24h(
+          acct.post_count_24h,
+          acct.post_count_24h_reset_at,
+          nowDate,
+        );
+        if (effectiveCount >= dailyCap) {
           bumpSkip('daily_cap_reached');
           continue;
         }
