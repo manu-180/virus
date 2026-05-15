@@ -222,6 +222,48 @@ export const publishCarouselToInstagram = inngest.createFunction(
       return urls;
     });
 
+    // ── 3b. Reserve a post slot in the 24h window (graph_api only) ─────────
+    // The legacy Python publisher (apps/ig-publisher) calls this RPC server-
+    // side. The graph_api in-process path bypasses Python, so without this
+    // line the counter NEVER ticks up — which is exactly what caused the
+    // May-14 runaway (scheduler's daily-cap gate read post_count_24h=0
+    // forever and kept dispatching).
+    //
+    // The RPC is atomic, handles 24h window reset, and returns false when
+    // we'd exceed daily_post_limit. Reserving BEFORE the publish call means
+    // a failed publish "wastes" one slot — same trade-off the Python
+    // publisher makes, and the right behaviour for IG's perspective.
+    if (account.auth_type === 'graph_api') {
+      const reserved = await step.run('reserve-post-slot', async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error } = await (supabase.rpc as any)(
+          'ig_account_try_increment_post_count',
+          { p_account_id: igAccountId },
+        );
+        if (error) {
+          throw new Error(`reserve_post_slot_failed: ${error.message}`);
+        }
+        return data === true;
+      });
+
+      if (!reserved) {
+        await step.run('mark-failed-rate-limited', async () => {
+          await supabase
+            .from('ig_publications')
+            .update({
+              status: 'failed',
+              error: {
+                code: 'rate_limit_exceeded',
+                message: 'daily_post_limit reached for this account',
+              },
+            })
+            .eq('id', publicationId);
+        });
+        logger.warn('publish.rate_limited', { publicationId, igAccountId });
+        return { status: 'failed', code: 'rate_limit_exceeded', terminal: true };
+      }
+    }
+
     // ── 4. publish (branch on auth_type) ────────────────────────────────────
     let outcome: PublishOutcome;
     if (account.auth_type === 'graph_api') {
@@ -249,6 +291,7 @@ export const publishCarouselToInstagram = inngest.createFunction(
           .eq('id', publicationId);
         if (error) throw new Error(`mark-published failed: ${error.message}`);
       });
+
       logger.info('publish.success', {
         publicationId,
         mediaId: outcome.mediaId,

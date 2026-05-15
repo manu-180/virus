@@ -97,8 +97,14 @@ export function SlideFullscreenModal({
         }),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { error?: string };
-        setSaveError(body.error ?? 'Error al guardar. Intentá de nuevo.');
+        let errCode: string | undefined;
+        try {
+          const body = await res.json() as { error?: string; message?: string };
+          errCode = body.error ?? body.message;
+        } catch {
+          errCode = `HTTP ${res.status}`;
+        }
+        setSaveError(errCode ?? 'Error al guardar. Intentá de nuevo.');
         return;
       }
       setEditMode(false);

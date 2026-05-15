@@ -412,15 +412,50 @@ export const generateCarouselCaption = inngest.createFunction(
         return;
       }
 
-      // Idempotency: skip if a publication for this (carousel, account)
-      // is already in flight or done.
+      // Account sanity check: don't auto-publish to a soft-deleted or non-
+      // active account. The scheduler enforces this too, but the account
+      // could have been disabled between dispatch and now (the pipeline can
+      // take a few minutes).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: acct } = await (db as any)
+        .from('ig_accounts')
+        .select('id, status, deleted_at')
+        .eq('id', igAccountId)
+        .single();
+
+      if (!acct || (acct as { deleted_at: string | null }).deleted_at) {
+        console.warn(JSON.stringify({
+          fn: 'generate-carousel-caption',
+          step: 'auto-publish-if-marked',
+          carouselId,
+          igAccountId,
+          skipped: 'account_deleted',
+        }));
+        return;
+      }
+      if ((acct as { status: string }).status !== 'active') {
+        console.warn(JSON.stringify({
+          fn: 'generate-carousel-caption',
+          step: 'auto-publish-if-marked',
+          carouselId,
+          igAccountId,
+          skipped: `account_${(acct as { status: string }).status}`,
+        }));
+        return;
+      }
+
+      // Idempotency: skip if ANY publication for this (carousel, account)
+      // exists, regardless of status. A previously-failed publication should
+      // be retried by the user manually from the UI (POST /publish-ig
+      // re-uses the same flow). Re-creating it from this hook would race
+      // against an in-flight Inngest retry of publish-carousel-to-instagram
+      // and could double-publish.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: existing } = await (db as any)
         .from('ig_publications')
         .select('id, status')
         .eq('carousel_id', carouselId)
         .eq('ig_account_id', igAccountId)
-        .in('status', ['queued', 'publishing', 'published'])
         .limit(1);
 
       if (existing && existing.length > 0) {
@@ -429,8 +464,9 @@ export const generateCarouselCaption = inngest.createFunction(
           step: 'auto-publish-if-marked',
           carouselId,
           igAccountId,
-          skipped: 'already_in_flight',
+          skipped: 'publication_exists',
           publicationId: existing[0].id,
+          existingStatus: existing[0].status,
         }));
         return;
       }

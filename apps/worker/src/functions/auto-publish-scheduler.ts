@@ -13,19 +13,24 @@
  * Per-tick flow:
  *   1. Load every enabled schedule (joined with defaults).
  *   2. For each schedule, gate-check in order — first failing gate wins:
- *      - account.status != 'active'                                 → skip
- *      - post_count_24h >= posts_per_day (UI cap)                   → skip
- *      - last_post_at + min_hours_between_posts > now()             → skip
- *      - now() not within any [target - jitter, target + jitter]    → skip
- *      - last_dispatched_at within last 15 min (idempotency)        → skip
- *      - no eligible topic in carousel_topics                       → skip
+ *      - last_dispatched_at within max(30m, 2×jitter + 5m) (idempotency) → skip
+ *      - now() not within any [target - jitter, target + jitter]        → skip
+ *      - account deleted / not active                                   → skip
+ *      - post_count_24h >= posts_per_day (UI cap)                       → skip
+ *      - last_post_at + min_hours_between_posts > now()                 → skip
+ *      - any in-flight carousel for this account (pending..captions)    → skip
+ *      - any in-flight publication for this account (queued/publishing) → skip
+ *      - CAS-reserve the cursor by flipping last_dispatched_at          → skip if lost race
+ *      - no eligible topic in carousel_topics                           → skip (releases cursor)
  *   3. Pick the least-used, oldest-used topic from the bank.
  *   4. Insert a `carousel_projects` row (status='pending') with
- *      `auto_publish_ig_account_id = schedule.ig_account_id`.
+ *      `auto_publish_ig_account_id = schedule.ig_account_id`. On failure,
+ *      release the cursor so the next tick can retry.
  *   5. Bump the topic's usage counters.
  *   6. Dispatch `virus/carousel.created` to kick off the existing pipeline.
  *      (plan → slides → compose → captions → mark-ready → auto-publish hook)
- *   7. Stamp `last_dispatched_at` + `last_carousel_id` on the schedule.
+ *   7. Stamp `last_carousel_id` on the schedule for UI display
+ *      (last_dispatched_at was already reserved in step 2).
  *
  * Anti-ban defaults are encoded in the schema (CHECK constraints + defaults).
  * Auto-disable of dead tokens is handled by the publish function via
@@ -40,11 +45,56 @@ import { getAdminClient } from '../lib/supabase.js';
 // Configuration constants
 // ---------------------------------------------------------------------------
 
-/** Idempotency window: refuse to redispatch a schedule within this many ms. */
-const IDEMPOTENCY_WINDOW_MS = 15 * 60 * 1000;
+/**
+ * Idempotency floor: refuse to redispatch within this many ms even when the
+ * jitter window is tiny. Prevents the cron firing twice in the same minute
+ * from generating two carousels.
+ */
+const IDEMPOTENCY_FLOOR_MS = 30 * 60 * 1000; // 30 min
+
+/**
+ * Compute the effective idempotency window for a schedule. We MUST cover the
+ * full open jitter window (2 × jitter_minutes wide) so the cron's 10-minute
+ * tick cadence can't slip a second dispatch in before the window closes.
+ *
+ * Without this, a schedule with jitter_minutes=60 has a 2h-wide window but
+ * the idempotency only blocks 15 min → 5+ dispatches per window. This is
+ * exactly what produced the May-14 runaway.
+ *
+ * Formula: max(floor, 2 × jitter + safety_margin). Safety margin = 5 min so
+ * that the last cron tick before the window edge still lands inside the
+ * idempotency block.
+ */
+export function effectiveIdempotencyMs(jitterMinutes: number): number {
+  const fullWindowMs = jitterMinutes * 2 * 60 * 1000;
+  const withSafety = fullWindowMs + 5 * 60 * 1000;
+  return Math.max(IDEMPOTENCY_FLOOR_MS, withSafety);
+}
 
 /** Auth-error counter threshold for auto-disable. */
 const MAX_CONSECUTIVE_AUTH_FAILURES = 3;
+
+/**
+ * Carousel statuses that count as "still in flight" — the scheduler must NOT
+ * spawn a second auto-publish carousel for the same IG account while one of
+ * these is still running. Pipeline lifecycle:
+ *   pending → generating_slides → composing → generating_captions → ready
+ * After 'ready' the auto-publish hook fires and inserts an ig_publications
+ * row; we gate on that separately below.
+ */
+const IN_FLIGHT_CAROUSEL_STATUSES = [
+  'pending',
+  'generating_slides',
+  'composing',
+  'generating_captions',
+] as const;
+
+/**
+ * Publication statuses that count as "publishing in progress" for the same
+ * IG account. Once a publication is queued or already publishing we must not
+ * spawn a fresh carousel that would race against it.
+ */
+const IN_FLIGHT_PUBLICATION_STATUSES = ['queued', 'publishing'] as const;
 
 /**
  * Pick a slide count for an auto-generated carousel.
@@ -199,11 +249,22 @@ export const autoPublishScheduler = inngest.createFunction(
     const nowMs = nowDate.getTime();
 
     for (const schedule of schedules) {
+      // Tracks whether the cursor was reserved by this iteration. If an
+      // exception escapes the inner try after reservation but before a
+      // successful dispatch, we must release the cursor so the next tick
+      // can retry; otherwise a transient DB hiccup would block dispatches
+      // for the entire idempotency window.
+      let cursorReservedAt: string | null = null;
+      let dispatchSucceeded = false;
+
       try {
-        // Idempotency gate first — cheapest skip.
+        // Idempotency gate first — cheapest skip. Dynamic window covers the
+        // schedule's full jitter range so we can't dispatch twice in the same
+        // open window even with cron firing every 10 min.
+        const idempotencyMs = effectiveIdempotencyMs(schedule.jitter_minutes);
         if (
           schedule.last_dispatched_at &&
-          nowMs - new Date(schedule.last_dispatched_at).getTime() < IDEMPOTENCY_WINDOW_MS
+          nowMs - new Date(schedule.last_dispatched_at).getTime() < idempotencyMs
         ) {
           bumpSkip('idempotency_window');
           continue;
@@ -255,6 +316,116 @@ export const autoPublishScheduler = inngest.createFunction(
           }
         }
 
+        // ── In-flight gates ───────────────────────────────────────────────
+        // These protect against the daily-cap/cooldown gates being lagging
+        // counters: a previous tick may already have generated a carousel
+        // that hasn't finished publishing (so post_count_24h hasn't ticked
+        // up yet) but the schedule's idempotency cursor is still in effect.
+        // Belt-and-suspenders on top of the cursor: if the cursor stamp
+        // failed mid-flight, these catch the orphan.
+
+        // 1) Any in-flight auto-publish carousel for this account?
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: inflightCarousels, error: inflightErr } = await (supabase as any)
+          .from('carousel_projects')
+          .select('id, status')
+          .eq('auto_publish_ig_account_id', schedule.ig_account_id)
+          .in('status', IN_FLIGHT_CAROUSEL_STATUSES as readonly string[])
+          .is('deleted_at', null)
+          .limit(1);
+
+        if (inflightErr) {
+          // Fail-safe: skip rather than risk a second dispatch.
+          logger.warn('auto_publish.inflight_carousel_check_failed', {
+            scheduleId: schedule.id,
+            error: inflightErr.message,
+          });
+          bumpSkip('inflight_check_failed');
+          continue;
+        }
+        if (inflightCarousels && inflightCarousels.length > 0) {
+          bumpSkip('inflight_carousel');
+          continue;
+        }
+
+        // 2) Any in-flight publication (queued/publishing) for this account?
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: inflightPubs, error: inflightPubErr } = await (supabase as any)
+          .from('ig_publications')
+          .select('id, status')
+          .eq('ig_account_id', schedule.ig_account_id)
+          .in('status', IN_FLIGHT_PUBLICATION_STATUSES as readonly string[])
+          .limit(1);
+
+        if (inflightPubErr) {
+          logger.warn('auto_publish.inflight_publication_check_failed', {
+            scheduleId: schedule.id,
+            error: inflightPubErr.message,
+          });
+          bumpSkip('inflight_check_failed');
+          continue;
+        }
+        if (inflightPubs && inflightPubs.length > 0) {
+          bumpSkip('inflight_publication');
+          continue;
+        }
+
+        // ── Reserve the cursor BEFORE dispatch (CAS on last_dispatched_at) ──
+        // This is the single point of serialization across cron ticks. If two
+        // ticks somehow race past the gates above, exactly one will own the
+        // cursor flip and proceed; the other gets `cursor_lost_race` and
+        // skips. We use the previous `last_dispatched_at` value as the CAS
+        // key so we don't depend on UNIQUE constraints.
+        const cursorAt = new Date().toISOString();
+        let cursorUpdate;
+        if (schedule.last_dispatched_at === null) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          cursorUpdate = await (supabase as any)
+            .from('ig_publication_schedules')
+            .update({ last_dispatched_at: cursorAt })
+            .eq('id', schedule.id)
+            .is('last_dispatched_at', null)
+            .select('id')
+            .maybeSingle();
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          cursorUpdate = await (supabase as any)
+            .from('ig_publication_schedules')
+            .update({ last_dispatched_at: cursorAt })
+            .eq('id', schedule.id)
+            .eq('last_dispatched_at', schedule.last_dispatched_at)
+            .select('id')
+            .maybeSingle();
+        }
+        if (cursorUpdate.error || !cursorUpdate.data) {
+          // Either DB error or a concurrent tick won the race.
+          if (cursorUpdate.error) {
+            logger.warn('auto_publish.cursor_reserve_failed', {
+              scheduleId: schedule.id,
+              error: cursorUpdate.error.message,
+            });
+            bumpSkip('cursor_reserve_failed');
+          } else {
+            bumpSkip('cursor_lost_race');
+          }
+          continue;
+        }
+
+        // Cursor is now reserved. From here on, any abort path MUST either
+        // call releaseCursor() (explicit) or let the outer catch handle it
+        // (implicit via cursorReservedAt + dispatchSucceeded).
+        cursorReservedAt = cursorAt;
+
+        const releaseCursor = async (): Promise<void> => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase as any)
+            .from('ig_publication_schedules')
+            .update({ last_dispatched_at: schedule.last_dispatched_at })
+            .eq('id', schedule.id)
+            .eq('last_dispatched_at', cursorAt);
+          cursorReservedAt = null;
+        };
+
         // ── Pick eligible topic ───────────────────────────────────────────
         const topic = await pickEligibleTopic(supabase, acct.project_id);
         if (!topic) {
@@ -263,6 +434,7 @@ export const autoPublishScheduler = inngest.createFunction(
             scheduleId: schedule.id,
             projectId: acct.project_id,
           });
+          await releaseCursor();
           bumpSkip('no_topics_available');
           continue;
         }
@@ -317,6 +489,7 @@ export const autoPublishScheduler = inngest.createFunction(
             scheduleId: schedule.id,
             error: insertErr?.message,
           });
+          await releaseCursor();
           bumpSkip('carousel_insert_failed');
           continue;
         }
@@ -370,20 +543,21 @@ export const autoPublishScheduler = inngest.createFunction(
             carouselId,
             error: sendErr instanceof Error ? sendErr.message : String(sendErr),
           });
+          await releaseCursor();
           bumpSkip('dispatch_failed');
           continue;
         }
 
-        // ── Stamp the schedule cursor ────────────────────────────────────
+        // ── Stamp the last_carousel_id for the UI ─────────────────────────
+        // `last_dispatched_at` was already reserved above; only the soft FK
+        // remains. Best-effort: a failure here doesn't impact correctness.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase as any)
           .from('ig_publication_schedules')
-          .update({
-            last_dispatched_at: new Date().toISOString(),
-            last_carousel_id: carouselId,
-          })
+          .update({ last_carousel_id: carouselId })
           .eq('id', schedule.id);
 
+        dispatchSucceeded = true;
         dispatched.push(schedule.id);
         logger.info('auto_publish.generated', {
           scheduleId: schedule.id,
@@ -403,6 +577,25 @@ export const autoPublishScheduler = inngest.createFunction(
           error: err instanceof Error ? err.message : String(err),
         });
         bumpSkip('exception');
+
+        // If we reserved the cursor but never confirmed dispatch, rewind it
+        // so the next tick can retry instead of being blocked for the whole
+        // idempotency window. A transient DB error shouldn't cost a slot.
+        if (cursorReservedAt && !dispatchSucceeded) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (supabase as any)
+              .from('ig_publication_schedules')
+              .update({ last_dispatched_at: schedule.last_dispatched_at })
+              .eq('id', schedule.id)
+              .eq('last_dispatched_at', cursorReservedAt);
+          } catch (rewindErr) {
+            logger.warn('auto_publish.cursor_rewind_failed', {
+              scheduleId: schedule.id,
+              error: rewindErr instanceof Error ? rewindErr.message : String(rewindErr),
+            });
+          }
+        }
       }
     }
 

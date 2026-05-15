@@ -16,6 +16,7 @@ import {
   buildAllowedSet,
   selectLeastUsed,
   isWindowOpen,
+  effectiveIdempotencyMs,
 } from '../auto-publish-scheduler.js';
 
 describe('buildAllowedSet', () => {
@@ -140,5 +141,43 @@ describe('isWindowOpen', () => {
   it('multiple windows: any match opens', () => {
     expect(isWindowOpen(at(20, 0), [9, 14, 20], 15)).toBe(true);
     expect(isWindowOpen(at(17, 0), [9, 14, 20], 15)).toBe(false);
+  });
+});
+
+describe('effectiveIdempotencyMs', () => {
+  const MIN = 60 * 1000;
+
+  it('returns the 30-min floor when jitter is small', () => {
+    // 2×0+5 = 5 min → clamped to 30 min floor
+    expect(effectiveIdempotencyMs(0)).toBe(30 * MIN);
+    // 2×10+5 = 25 min → clamped to 30 min floor
+    expect(effectiveIdempotencyMs(10)).toBe(30 * MIN);
+    // 2×12+5 = 29 min → still under floor
+    expect(effectiveIdempotencyMs(12)).toBe(30 * MIN);
+  });
+
+  it('grows past the floor as jitter increases', () => {
+    // 2×15+5 = 35 min → over floor, returned as-is
+    expect(effectiveIdempotencyMs(15)).toBe(35 * MIN);
+    expect(effectiveIdempotencyMs(25)).toBe((25 * 2 + 5) * MIN); // 55 min
+    expect(effectiveIdempotencyMs(60)).toBe((60 * 2 + 5) * MIN); // 125 min
+  });
+
+  it('covers the full jitter window with safety margin', () => {
+    // For any jitter, the idempotency MUST be >= full window (2×jitter).
+    // That's the invariant that prevents the May-14 runaway.
+    for (const jitter of [0, 5, 10, 15, 25, 30, 45, 60]) {
+      const idem = effectiveIdempotencyMs(jitter);
+      const fullWindow = jitter * 2 * MIN;
+      expect(idem).toBeGreaterThanOrEqual(fullWindow);
+    }
+  });
+
+  it('the May-14 runaway scenario: jitter=60 must block re-dispatch for full 2h window', () => {
+    // The bug: jitter=60 means 2h-wide window, but old idempotency was
+    // hardcoded to 15 min. With cron every 10 min, that means ~6 dispatches
+    // per window. The fix MUST return at least 2h = 120 min.
+    const idem = effectiveIdempotencyMs(60);
+    expect(idem).toBeGreaterThanOrEqual(120 * MIN);
   });
 });

@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import {
-  composeSlide,
-  STYLE_PRESETS,
-  applyBrandOverrides,
-} from '@virus/shared/carousel';
-import type { SlideSpec, StylePreset } from '@virus/shared/carousel';
+import { composeSlide } from '@virus/shared/carousel/composer';
+import { STYLE_PRESETS, applyBrandOverrides } from '@virus/shared/carousel/templates';
+import type { SlideSpec } from '@virus/shared/carousel/types';
+import type { StylePreset } from '@virus/shared/carousel/templates';
 
 const MAX_HEADLINE = 40;
 const MAX_BODY = 120;

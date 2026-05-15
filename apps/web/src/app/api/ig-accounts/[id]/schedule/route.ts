@@ -240,6 +240,24 @@ export async function PUT(
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
 
+    // Load the existing row (if any) so we can decide whether to reset the
+    // idempotency cursor. We reset it when the user changes the *timing*
+    // knobs (target hours, jitter, min cooldown) because the cursor was
+    // taken under the old rules and shouldn't keep blocking the new ones.
+    const { data: existing } = await (supabase as AnyTable)
+      .from('ig_publication_schedules')
+      .select('target_hours_utc, jitter_minutes, min_hours_between_posts')
+      .eq('ig_account_id', id)
+      .maybeSingle();
+
+    const timingChanged = existing && (
+      JSON.stringify((existing as { target_hours_utc: number[] }).target_hours_utc) !==
+        JSON.stringify(parsed.target_hours_utc) ||
+      (existing as { jitter_minutes: number }).jitter_minutes !== parsed.jitter_minutes ||
+      (existing as { min_hours_between_posts: number }).min_hours_between_posts !==
+        parsed.min_hours_between_posts
+    );
+
     // We re-set consecutive_failures + disabled_reason whenever the user
     // re-enables, to give them a clean slate after a reconnect.
     const upsertRow: Record<string, unknown> = {
@@ -259,6 +277,10 @@ export async function PUT(
     if (parsed.enabled) {
       upsertRow['consecutive_failures'] = 0;
       upsertRow['disabled_reason'] = null;
+    }
+    if (timingChanged) {
+      // Reset cursor so the new timing rules take effect on the next tick.
+      upsertRow['last_dispatched_at'] = null;
     }
 
     const { data, error } = await (supabase as AnyTable)
