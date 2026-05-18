@@ -8,6 +8,13 @@ vi.mock('../../visuals/providers/gemini.js', () => ({
   generateImageGemini: vi.fn(),
 }));
 
+// Embeddings are mocked: image-library code calls embedText() for reuse
+// lookups and library saves. The carousel pipeline must work fully offline.
+vi.mock('../../visuals/providers/gemini-embedding.js', () => ({
+  embedText: vi.fn(async () => Array.from({ length: 768 }, () => 0.01)),
+  EMBEDDING_DIMENSIONS: 768,
+}));
+
 // p-limit is ESM — mock it so tests run synchronously without actual concurrency.
 vi.mock('p-limit', () => ({
   default: (n: number) => {
@@ -68,9 +75,27 @@ const fakeImageBuffer = Buffer.from('fake-png-data');
 
 function makeSupabaseMock(uploadError: unknown = null) {
   const upload = vi.fn().mockResolvedValue({ data: {}, error: uploadError });
-  const from = vi.fn(() => ({ upload }));
+  const copy = vi.fn().mockResolvedValue({ data: {}, error: null });
+  const download = vi.fn().mockResolvedValue({
+    data: { arrayBuffer: async () => fakeImageBuffer },
+    error: null,
+  });
+  const from = vi.fn(() => ({ upload, copy, download }));
   const storage = { from };
-  return { db: { storage } as unknown as SupabaseClient, upload, from };
+  // Table + RPC surface used by the image library. `rpc` returns no matches
+  // by default so reuse never short-circuits generation in these tests.
+  const insert = vi.fn().mockResolvedValue({ data: {}, error: null });
+  const tableFrom = vi.fn(() => ({ insert }));
+  const rpc = vi.fn().mockResolvedValue({ data: [], error: null });
+  return {
+    db: { storage, from: tableFrom, rpc } as unknown as SupabaseClient,
+    upload,
+    from,
+    copy,
+    download,
+    insert,
+    rpc,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -785,5 +810,89 @@ describe('generateAllSlideImages', () => {
       expect(input.prompt).toContain('premium 3D render');
       expect(input.prompt).toMatch(/Negative:.*no humans/);
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // Image library reuse — world-anchor brands consult the library first
+  // -------------------------------------------------------------------------
+
+  it('reuse: serves a matching library image instead of calling Gemini', async () => {
+    const { db, rpc, download } = makeSupabaseMock();
+    // Library returns a strong match for this slide.
+    vi.mocked(rpc).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'asset-1',
+          storage_path: 'library/proj-1/insight/asset-1.png',
+          similarity: 0.95,
+        },
+      ],
+      error: null,
+    });
+
+    const result = await generateCarouselSlideImage({
+      brief: mockBrief,
+      slide: mockSlide,
+      brand: apexBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+      allowReuse: true,
+    });
+
+    // Gemini was NOT called — the image came from the library.
+    expect(generateImageGemini).not.toHaveBeenCalled();
+    expect(download).toHaveBeenCalledWith('library/proj-1/insight/asset-1.png');
+    expect(result.reused).toBe(true);
+    expect(result.assetId).toBe('asset-1');
+    expect(result.costCents).toBe(0);
+    expect(result.path).toBe('user-abc/carousel-xyz/slide-3.png');
+  });
+
+  it('reuse: generates fresh when the library has no match', async () => {
+    vi.mocked(generateImageGemini).mockResolvedValue({
+      bytes: fakeImageBuffer,
+      width: 1080,
+      height: 1350,
+      costUsd: 0.04,
+    });
+    const { db } = makeSupabaseMock(); // rpc returns [] by default
+
+    const result = await generateCarouselSlideImage({
+      brief: mockBrief,
+      slide: mockSlide,
+      brand: apexBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+      allowReuse: true,
+    });
+
+    expect(generateImageGemini).toHaveBeenCalledTimes(1);
+    expect(result.reused).toBe(false);
+    expect(result.costCents).toBeGreaterThan(0);
+  });
+
+  it('reuse: never consulted when allowReuse is not set (anchor-chain path)', async () => {
+    vi.mocked(generateImageGemini).mockResolvedValue({
+      bytes: fakeImageBuffer,
+      width: 1080,
+      height: 1350,
+      costUsd: 0.04,
+    });
+    const { db, rpc } = makeSupabaseMock();
+
+    const result = await generateCarouselSlideImage({
+      brief: mockBrief,
+      slide: mockSlide,
+      brand: apexBrand,
+      userId: 'user-abc',
+      carouselId: 'carousel-xyz',
+      supabase: db,
+      // allowReuse omitted
+    });
+
+    expect(rpc).not.toHaveBeenCalled();
+    expect(result.reused).toBe(false);
   });
 });

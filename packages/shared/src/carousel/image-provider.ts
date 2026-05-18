@@ -2,8 +2,18 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { generateImageGemini } from '../visuals/providers/gemini.js';
 import { GEMINI_BATCH_USD_PER_IMAGE } from './cost.js';
 import { buildVisualPrompt } from './prompts.js';
+import {
+  getReuseConfig,
+  findReusableSlideImage,
+  reuseSlideImage,
+  saveSlideImageAsset,
+} from './image-library.js';
 import type { CarouselBrief, SlideSpec } from './types.js';
 import type { ProjectBrand } from '../viral/types.js';
+
+// 4:5 Instagram carousel slide dimensions.
+const SLIDE_WIDTH = 1080;
+const SLIDE_HEIGHT = 1350;
 
 export class CarouselSafetyBlockedError extends Error {
   constructor(reason: string) {
@@ -60,12 +70,25 @@ export interface GenerateCarouselSlideImageArgs {
    * the whole carousel reads as one continuous visual story.
    */
   referenceImage?: Buffer;
+  /**
+   * When true, the image library is consulted FIRST: if a semantically-close
+   * image already exists for this project + slide role + visual style, it is
+   * reused instead of calling Gemini. Set by the independent batch path
+   * (world-anchor / standalone brands). The anchor-chain path leaves it false
+   * because its slides must visually match a per-carousel anchor and so are
+   * not safely reusable across carousels.
+   */
+  allowReuse?: boolean;
 }
 
 export interface SlideImageResult {
   path: string;
   bytes: number;
   costCents: number;
+  /** True when this slide was served from the image library (no Gemini call). */
+  reused: boolean;
+  /** The library asset id when `reused` is true. */
+  assetId?: string;
   /**
    * Raw image buffer. The batch pipeline uses this to pass the anchor slide
    * (slide 0 / hook) as a reference image to subsequent slides without a
@@ -76,8 +99,15 @@ export interface SlideImageResult {
 }
 
 /**
- * Generate a single 4:5 carousel slide image with Gemini and upload it to the
+ * Generate (or reuse) a single 4:5 carousel slide image and upload it to the
  * `carousels` Storage bucket at `{userId}/{carouselId}/slide-{idx}.png`.
+ *
+ * Flow:
+ *  1. If `allowReuse` is set, ask the image library for a semantically-close
+ *     stored image (same project + role + visual style). On a hit, copy it
+ *     into the slide path — no Gemini call, `costCents` 0, `reused` true.
+ *  2. Otherwise generate fresh with Gemini, upload, and index the result into
+ *     the library so future carousels can reuse it.
  *
  * Throws {@link CarouselSafetyBlockedError} on RAI policy refusals (Inngest
  * should NOT retry — the brief needs editing).
@@ -87,16 +117,70 @@ export interface SlideImageResult {
 export async function generateCarouselSlideImage(
   args: GenerateCarouselSlideImageArgs,
 ): Promise<SlideImageResult> {
-  const { brief, slide, brand, userId, carouselId, supabase, referenceImage } = args;
+  const { brief, slide, brand, userId, carouselId, supabase, referenceImage, allowReuse } = args;
 
+  const path = `${userId}/${carouselId}/slide-${slide.idx}.png`;
+  const projectId = brand.projectId;
+  const reuseConfig = getReuseConfig();
+
+  // --- 1. Reuse: serve a stored image when one closely matches this slide ---
+  if (allowReuse && reuseConfig.enabled && projectId) {
+    const match = await findReusableSlideImage({
+      supabase,
+      projectId,
+      brand,
+      slide,
+      topic: brief.topic,
+      config: reuseConfig,
+    });
+    if (match) {
+      try {
+        const reused = await reuseSlideImage({
+          supabase,
+          assetId: match.assetId,
+          sourcePath: match.storagePath,
+          destPath: path,
+        });
+        console.log(
+          JSON.stringify({
+            fn: 'generateCarouselSlideImage',
+            step: 'reused',
+            carouselId,
+            idx: slide.idx,
+            assetId: match.assetId,
+            similarity: Math.round(match.similarity * 1000) / 1000,
+          }),
+        );
+        return {
+          path,
+          bytes: reused.bytes,
+          costCents: 0,
+          reused: true,
+          assetId: match.assetId,
+          buffer: reused.buffer,
+        };
+      } catch (err) {
+        // Reuse failed mid-copy — fall through to fresh generation.
+        console.warn(
+          JSON.stringify({
+            fn: 'generateCarouselSlideImage',
+            warn: 'reuse_failed',
+            carouselId,
+            idx: slide.idx,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
+    }
+  }
+
+  // --- 2. Fresh generation with Gemini ---
   const prompt = buildVisualPrompt(slide, brief.stylePreset, brand, {
     topic: brief.topic,
     hasReferenceImage: referenceImage != null,
   });
 
   const imageBytes = await generateWithRetry(prompt, referenceImage);
-
-  const path = `${userId}/${carouselId}/slide-${slide.idx}.png`;
 
   const { error: uploadError } = await supabase.storage
     .from('carousels')
@@ -106,7 +190,25 @@ export async function generateCarouselSlideImage(
 
   const costCents = Math.round(GEMINI_BATCH_USD_PER_IMAGE * 10_000) / 100;
 
-  return { path, bytes: imageBytes.length, costCents, buffer: imageBytes };
+  // --- 3. Index the fresh image into the library for future reuse ---
+  // `saveSlideImageAsset` is self-gating (only reusable strategies) and never
+  // throws — a failure here just means this image won't be reusable later.
+  if (reuseConfig.enabled && projectId) {
+    await saveSlideImageAsset({
+      supabase,
+      projectId,
+      brand,
+      slide,
+      topic: brief.topic,
+      carouselId,
+      sourcePath: path,
+      bytes: imageBytes.length,
+      width: SLIDE_WIDTH,
+      height: SLIDE_HEIGHT,
+    });
+  }
+
+  return { path, bytes: imageBytes.length, costCents, reused: false, buffer: imageBytes };
 }
 
 // Wraps generateImageGemini with retry-on-rate-limit and translation of

@@ -269,17 +269,21 @@ export const generateCarouselSlides = inngest.createFunction(
             }));
           }
 
-          // Log cost for Tanda 18 aggregation
-          try {
-            await db.from('usage_records').insert({
-              user_id: userId,
-              service: 'gemini',
-              cost_usd: success.costCents / 100,
-              units: 1,
-              metadata: JSON.stringify({ carouselId, idx, model: 'gemini-carousel-slide' }),
-            });
-          } catch {
-            // Non-fatal: cost logging failure should not abort generation
+          // Log cost for Tanda 18 aggregation. Reused slides cost $0 (served
+          // from the image library, no Gemini call) — skip the record so the
+          // usage table only reflects real API spend.
+          if (!success.reused) {
+            try {
+              await db.from('usage_records').insert({
+                user_id: userId,
+                service: 'gemini',
+                cost_usd: success.costCents / 100,
+                units: 1,
+                metadata: JSON.stringify({ carouselId, idx, model: 'gemini-carousel-slide' }),
+              });
+            } catch {
+              // Non-fatal: cost logging failure should not abort generation
+            }
           }
 
           console.log(JSON.stringify({
@@ -290,6 +294,8 @@ export const generateCarouselSlides = inngest.createFunction(
             path: success.path,
             bytes: success.bytes,
             costCents: success.costCents,
+            reused: success.reused,
+            ...(success.assetId ? { assetId: success.assetId } : {}),
             ms: Date.now(),
           }));
         },

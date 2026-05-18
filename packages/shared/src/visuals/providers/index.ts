@@ -16,6 +16,8 @@ export type { LumaGenInput, LumaGenOutput } from './luma.js';
 export { generateImageGemini } from './gemini.js';
 export type { GeminiGenInput, GeminiGenOutput } from './gemini.js';
 
+export { embedText, EMBEDDING_DIMENSIONS } from './gemini-embedding.js';
+
 /** Provider + asset-type pairing for a given slot. */
 export interface ProviderChoice {
   provider: 'luma' | 'gemini';

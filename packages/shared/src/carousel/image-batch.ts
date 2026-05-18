@@ -84,6 +84,8 @@ interface GenerateOneArgs {
   carouselId: string;
   supabase: SupabaseClient;
   referenceImage?: Buffer;
+  /** Allow the provider to serve this slide from the reusable image library. */
+  allowReuse?: boolean;
   onSlideDone?: (idx: number, result: SlideSuccess) => Promise<void>;
 }
 
@@ -97,6 +99,7 @@ async function generateOne(args: GenerateOneArgs): Promise<SlideSuccessInternal 
       carouselId: args.carouselId,
       supabase: args.supabase,
       ...(args.referenceImage ? { referenceImage: args.referenceImage } : {}),
+      ...(args.allowReuse ? { allowReuse: true } : {}),
     };
     const result = await generateCarouselSlideImage(providerArgs);
     const success: SlideSuccessInternal = { idx: args.slide.idx, ...result };
@@ -285,7 +288,10 @@ async function generateAllSlideImagesIndependent(
           userId,
           carouselId,
           supabase,
-          // No referenceImage — independent generation
+          // No referenceImage — independent generation. Reuse IS allowed here:
+          // world-anchor / standalone slides are self-described and travel
+          // safely across carousels.
+          allowReuse: true,
           ...(onSlideDone ? { onSlideDone } : {}),
         }),
       ),
