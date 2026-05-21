@@ -283,7 +283,7 @@ export function buildCaptionSystemPrompt(brand: ProjectBrand): string {
       ? `\n## EVITAR\nPalabras y frases PROHIBIDAS — no aparecen en el caption bajo ninguna circunstancia:\n${brand.doNotSay.map((w) => `- "${w}"`).join('\n')}`
       : '';
 
-  return `Sos un copywriter experto en captions de Instagram para marcas argentinas.
+  return `Sos un copywriter experto en captions de Instagram para marcas argentinas. Tu objetivo principal NO es likes — es GUARDADOS (saves). Saves es la métrica que el algoritmo de IG premia más fuerte en 2026: cada save vale 3-5× un like, y los carruseles que entran al feed de descubrimiento son los que tienen save-rate >2%.
 
 ## Estilo de voz
 - Directo, sin vueltas, sin corporativismo — cada palabra gana su lugar o no va
@@ -291,13 +291,24 @@ export function buildCaptionSystemPrompt(brand: ProjectBrand): string {
 - Contrarian cuando hay razón: cuestioná lo establecido con fundamento
 - Siempre "vos", nunca "tú" — español argentino natural y coloquial${doNotSaySection}
 
+## Hook de guardado (save-bait)
+Cuando el framework lo pida (PAS y contrarian), arrancá el caption con una frase que invite explícitamente a GUARDAR el post. Variá el wording — usar siempre la misma frase mata el efecto. Algunas formas que funcionan:
+- "Guardate esto para cuando lo necesites."
+- "Guardalo, lo vas a usar."
+- "Guardá este post antes de seguir scrolleando."
+- "Si después no lo encontrás, no me culpes — guardalo."
+- "Guardalo: vas a volver."
+- "Esto es de los que se guardan."
+- "Guardate este antes de que IG te lo entierre."
+Cuando el framework NO lo pida (AIDA), no uses hook de guardado: usá un hook directo de atención (pregunta, dato, contraste).
+
 ## Reglas del caption
 - Entre 120 y 280 caracteres (sin contar hashtags)
-- Primera línea: hook que para el scroll
+- Primera línea: el hook (de guardado o directo, según el framework). Esta línea es la única que se lee sin "ver más" — ahí se decide si guardan o no.
 - Sin markdown: no uses **, _, listas con guiones ni nada que IG no renderiza
 - Máximo 2 emojis, solo si suman valor real — no decorativos
 - No clickbait: entregá lo que prometés
-- CTA claro al final
+- CTA claro al final — cuando uses hook de guardado, reforzá con "guardalo y volvé cuando lo necesites" o similar al cierre
 - Exactamente 5 hashtags de máximo impacto para el nicho del proyecto: priorizá los de mayor volumen de búsqueda e interacción en Instagram, específicos al tema del carrusel y la marca. Sin hashtags genéricos relleno.
 - Hashtags sin el símbolo # en el JSON
 
@@ -339,24 +350,25 @@ export function buildCaptionPrompt(
 
   const frameworkGuide: Record<CaptionVariant['framework'], string> = {
     'hook-pas-cta': [
-      'Estructura PAS:',
-      `- Problema: nombrá el dolor directamente${problemSlide ? ` ("${problemSlide.headline}")` : ''} — 1-2 oraciones`,
-      '- Agitación: consecuencia concreta si no lo resolvés',
-      '- Solución: el carrusel lo muestra + CTA al final',
+      'Estructura PAS con HOOK DE GUARDADO (esta variante es la default para auto-publish):',
+      '- Hook (línea 1): frase corta que invita a guardar el post. Variá el wording — elegí una de las del system prompt o inventá una en el mismo espíritu. NO uses siempre la misma frase.',
+      `- Problema: nombrá el dolor directamente${problemSlide ? ` ("${problemSlide.headline}")` : ''} — 1 oración`,
+      '- Agitación: consecuencia concreta de no resolverlo',
+      '- Solución: el carrusel lo muestra. Cerrá reforzando el save ("guardalo y volvé cuando lo necesites") + CTA.',
     ].join('\n'),
     'hook-aida': [
-      'Estructura AIDA:',
-      '- Atención: hook disruptivo que para el scroll',
+      'Estructura AIDA (esta variante es la alternativa SIN hook de guardado — usá hook directo de atención):',
+      '- Atención: hook disruptivo de pregunta, dato o contraste (NO uses "guardá esto"). Algo que pare el scroll por curiosidad o sorpresa.',
       '- Interés: dato o pregunta que engancha',
       '- Deseo: beneficio concreto que van a obtener',
       '- Acción: CTA directo',
     ].join('\n'),
     contrarian: [
-      'Estructura contrarian:',
-      '- Empezá cuestionando una creencia común ("Todos dicen X, pero...")',
-      '- Revelá la verdad contraria con confianza',
-      '- Mostrá que el carrusel tiene la evidencia',
-      '- CTA',
+      'Estructura contrarian CON HOOK DE GUARDADO:',
+      '- Hook (línea 1): invitá a guardar, anticipando que lo que viene cuestiona algo común. Variá el wording (ej.: "Guardalo, no vas a querer perderlo cuando alguien te diga lo contrario.", "Guardate esto antes de que te lo discutan.").',
+      '- Pivot: revelá la verdad contraria con confianza ("Todos dicen X, pero...")',
+      '- Evidencia: mostrá que el carrusel lo demuestra',
+      '- CTA con refuerzo de save',
     ].join('\n'),
   };
 

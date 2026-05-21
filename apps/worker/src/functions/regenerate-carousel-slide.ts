@@ -26,6 +26,7 @@ import {
   buildSlidePlanPrompt,
   sanitizeSlideBody,
   SlideSpecArraySchema,
+  pickBrandStampIdxFromCount,
 } from '@virus/shared/carousel';
 import type { SlideSpec, CarouselBrief, StylePreset } from '@virus/shared/carousel';
 import type { ProjectBrand } from '@virus/shared/viral';
@@ -447,7 +448,21 @@ export const regenerateCarouselSlide = inngest.createFunction(
 
       const baseImage = Buffer.from(await data.arrayBuffer());
 
-      const composed = await composeSlide({ baseImage, slide: slideSpec, preset });
+      // Brand stamp on regenerate: must match the original whole-batch pick so
+      // the stamped slide stays stamped (and the others stay un-stamped) after
+      // any individual regenerate. Both sides derive the idx from the same
+      // hash(carouselId) + slideCount, so the choice is stable without
+      // persisting anything in DB.
+      const stampIdx = pickBrandStampIdxFromCount(brief.slideCount, carouselId);
+      const shouldStamp =
+        stampIdx === idx && !!brand.brandName && brand.brandName.trim().length > 0;
+
+      const composed = await composeSlide({
+        baseImage,
+        slide: slideSpec,
+        preset,
+        ...(shouldStamp ? { brandStamp: brand.brandName } : {}),
+      });
 
       const composedPath = `${userId}/${carouselId}/composed-${idx}.png`;
 

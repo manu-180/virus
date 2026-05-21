@@ -35,6 +35,13 @@ export interface ComposeAllSlidesArgs {
   userId: string;
   carouselId: string;
   supabase: SupabaseClient;
+  /**
+   * Brand name to render as a translucent stamp on exactly ONE slide of the
+   * carousel (the slide identified by `brandStampIdx`). If either field is
+   * missing/null, no stamp is rendered.
+   */
+  brandName?: string;
+  brandStampIdx?: number | null;
   onSlideDone?: (idx: number, result: ComposeSuccess) => Promise<void>;
 }
 
@@ -47,7 +54,13 @@ export interface ComposeAllSlidesArgs {
  * Individual slide failures do NOT abort the batch — every slide is attempted.
  */
 export async function composeAllSlides(args: ComposeAllSlidesArgs): Promise<ComposeBatchResult> {
-  const { slides, preset, userId, carouselId, supabase, onSlideDone } = args;
+  const { slides, preset, userId, carouselId, supabase, onSlideDone, brandName, brandStampIdx } = args;
+
+  const stampEnabled =
+    typeof brandStampIdx === 'number' &&
+    brandStampIdx >= 0 &&
+    !!brandName &&
+    brandName.trim().length > 0;
 
   const limit = pLimit(CONCURRENCY);
 
@@ -65,11 +78,13 @@ export async function composeAllSlides(args: ComposeAllSlidesArgs): Promise<Comp
 
           const baseImage = Buffer.from(await data.arrayBuffer());
 
-          // Compose text overlay
+          // Compose text overlay (+ optional brand stamp on the chosen idx)
+          const shouldStamp = stampEnabled && brandStampIdx === slide.idx;
           const composed = await composeSlide({
             baseImage,
             slide: slide.spec,
             preset,
+            ...(shouldStamp ? { brandStamp: brandName as string } : {}),
           });
 
           // Upload composed image
