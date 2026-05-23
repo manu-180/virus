@@ -374,15 +374,31 @@ export const regenerateCarouselSlide = inngest.createFunction(
     //   (technique + palette + mood) in the text prompt. Passing slide 0 as
     //   a reference would force the model to mimic its SUBJECT (the wrong
     //   continuity axis), defeating the whole point of world-anchor.
+    //
+    // Brand-typography slide: if THIS regenerated idx matches the
+    // deterministic pick for the carousel, we ask Gemini to bake the brand
+    // name into the artwork (and skip the reference image — see image-batch
+    // for the same logic + rationale).
     // ------------------------------------------------------------------
     const imagePath = await step.run('generate-image', async () => {
       const db = getAdminClient();
+
+      // Resolve the brand-typography directive BEFORE deciding on a reference
+      // image: the typography slide skips the anchor reference so Gemini has
+      // room to compose the lettering into the scene from scratch instead of
+      // grafting text onto an existing photo (which always reads as a stamp).
+      const stampIdx = pickBrandStampIdxFromCount(brief.slideCount, carouselId);
+      const brandNameTrimmed = brand.brandName?.trim() ?? '';
+      const brandTypography =
+        stampIdx === idx && brandNameTrimmed.length > 0
+          ? { brandName: brandNameTrimmed }
+          : undefined;
 
       const subjectStrategy =
         brand.visualStyle?.imageProfile?.subjectStrategy ?? 'character-anchor';
 
       let referenceImage: Buffer | undefined;
-      if (subjectStrategy === 'character-anchor' && idx !== 0) {
+      if (subjectStrategy === 'character-anchor' && idx !== 0 && !brandTypography) {
         const anchorPath = `${userId}/${carouselId}/slide-0.png`;
         try {
           const { data, error: dlErr } = await db.storage
@@ -414,6 +430,7 @@ export const regenerateCarouselSlide = inngest.createFunction(
         carouselId,
         supabase: db,
         ...(referenceImage ? { referenceImage } : {}),
+        ...(brandTypography ? { brandTypography } : {}),
       });
 
       await db
@@ -426,6 +443,7 @@ export const regenerateCarouselSlide = inngest.createFunction(
         fn: 'regenerate-carousel-slide',
         step: 'generate-image',
         carouselId, idx, path: result.path, bytes: result.bytes,
+        brandTypography: brandTypography ? brandTypography.brandName : null,
       }));
 
       return result.path;
@@ -447,6 +465,11 @@ export const regenerateCarouselSlide = inngest.createFunction(
 
       const baseImage = Buffer.from(await data.arrayBuffer());
 
+      // Brand name is no longer composited as a Satori overlay — it lives in
+      // the generated image itself (see step 3 / brandTypography), which
+      // means the composer's only job here is the text overlay. The
+      // deterministic stamp-idx pick still happens above, but inside the
+      // image-generation step, not here.
       const composed = await composeSlide({ baseImage, slide: slideSpec, preset });
 
       const composedPath = `${userId}/${carouselId}/composed-${idx}.png`;

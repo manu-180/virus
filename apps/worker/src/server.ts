@@ -2,6 +2,13 @@ import { config } from 'dotenv';
 import { resolve } from 'node:path';
 config({ path: resolve(process.cwd(), '.env.local'), override: true });
 
+// Deploy marker: the previous Railway watch paths were configured to track
+// only apps/worker/**, so changes that lived purely in packages/shared/**
+// were silently skipped ("No changes to watched files"). Touching this file
+// alongside shared-package changes forces a worker redeploy when the new code
+// needs to land in production. If you see this marker comment alone in a
+// commit, the diff in packages/shared is the real payload.
+
 import http from 'node:http';
 import { serve } from 'inngest/node';
 import { inngest, functions } from './index.js';

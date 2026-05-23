@@ -420,6 +420,19 @@ export interface BuildVisualPromptOptions {
    * passes a reference image, so this stays false.
    */
   hasReferenceImage?: boolean;
+  /**
+   * When set, instructs Gemini to render the brand name as part of the artwork
+   * itself — display typography baked into the composition (think magazine
+   * cover lettering, brutalist poster type, environmental signage). This is
+   * the "brand stamp" mechanism: instead of compositing a Satori overlay on
+   * top of a clean photo (which always reads as a watermark), we ask the
+   * image model to spell the name as a designed element of the scene.
+   *
+   * Only ONE slide per carousel should receive this; the caller picks the idx
+   * via `pickBrandStampIdx`. When this option is set, the prompt's "no text"
+   * negative is dropped so Gemini is free to render letters in that slide.
+   */
+  brandTypography?: { brandName: string };
 }
 
 /**
@@ -499,12 +512,30 @@ function buildVisualPromptFromProfile(
   // Negatives. Each item gets prefixed `no ` only if it doesn't already start
   // with "no " — this lets users write either "humans" or "no humans" in the
   // profile and both work.
+  //
+  // When `brandTypography` is set, we DROP the generic "no text/letters/words"
+  // ban so Gemini is free to render the brand name as designed lettering in
+  // the scene. "no watermarks, no logos" stays — we want typography, not a
+  // logo bug or a stamped graphic.
   const normalizedNegatives = profile.negativeVisuals.map((n) =>
     n.toLowerCase().trim().startsWith('no ') ? n.trim() : `no ${n.trim()}`,
   );
+  const wantsBrandText = opts.brandTypography && opts.brandTypography.brandName.trim().length > 0;
+  const textNegatives = wantsBrandText
+    ? 'no extra text beyond the brand name, no watermarks, no logos, no UI elements'
+    : 'no text, no letters, no words, no watermarks';
   const negativesLine = normalizedNegatives.length > 0
-    ? `Negative: ${normalizedNegatives.join(', ')}, no text, no letters, no words, no watermarks.`
-    : 'Negative: no text, no letters, no words, no watermarks.';
+    ? `Negative: ${normalizedNegatives.join(', ')}, ${textNegatives}.`
+    : `Negative: ${textNegatives}.`;
+
+  // Brand typography directive — only emitted on the slide chosen by the
+  // caller. Asks the image model to integrate the brand name as a designed
+  // element of the scene (display lettering baked into the composition),
+  // NOT as a watermark or overlay. Phrasing borrowed from cinematography /
+  // graphic-design vocabulary because that's the visual register we want.
+  const brandTypographyDirective = wantsBrandText
+    ? `Integrate the word "${opts.brandTypography!.brandName.trim()}" as bold display typography that is part of the artwork itself — treated like magazine-cover lettering, brutalist poster type, or environmental signage built into the scene. The letters must share the same lighting, palette, materials, and perspective as the rest of the image, as if photographed or painted along with the subject. NOT a watermark, NOT a logo stamp, NOT a flat text overlay. Spell it exactly: "${opts.brandTypography!.brandName.trim()}". Render it once, prominently, with intentional composition.`
+    : '';
 
   // Final assembly. Order matters for Gemini: the per-slide visualPrompt
   // (concrete subject) goes first so it dominates, then the consistent world
@@ -516,6 +547,7 @@ function buildVisualPromptFromProfile(
     `Composition: ${profile.composition}.`,
     `Mood: ${moodLine}.`,
     paletteLine + `Brand: ${brand.brandName}.`,
+    brandTypographyDirective,
     'Aspect ratio 4:5 (1080x1350px).',
     negativesLine,
   ]
@@ -566,5 +598,16 @@ function buildVisualPromptLegacy(
   if (vs.vibe) brandHints.push(`brand vibe: ${vs.vibe}`);
   const brandSection = brandHints.length > 0 ? `. Brand palette: ${brandHints.join(', ')}` : '';
 
-  return `${referenceDirective}${anchor}${slideSpec.visualPrompt}. Visual style: ${mood}. Brand: ${brand.brandName}${brandSection}. Maintain visual consistency across the carousel — same color palette, lighting direction, and mood. Aspect ratio 4:5 (1080x1350px). Negative: no text, no letters, no words, no logos, no watermarks, no close-up human faces unless explicitly described, no clutter.`;
+  // When the slide is the "branded" pick, drop the generic text negative and
+  // add an integration directive so Gemini renders the name as part of the
+  // artwork (see buildVisualPromptFromProfile for the design rationale).
+  const wantsBrandText = opts.brandTypography && opts.brandTypography.brandName.trim().length > 0;
+  const brandTypographyDirective = wantsBrandText
+    ? ` Integrate the word "${opts.brandTypography!.brandName.trim()}" as bold display typography that is part of the artwork itself — magazine-cover lettering, brutalist poster type, or environmental signage built into the scene, sharing the same lighting, palette, materials, and perspective as the subject. NOT a watermark, NOT a logo stamp, NOT a flat text overlay. Spell it exactly: "${opts.brandTypography!.brandName.trim()}". Render it once, prominently, with intentional composition.`
+    : '';
+  const negative = wantsBrandText
+    ? 'Negative: no extra text beyond the brand name, no logos, no watermarks, no close-up human faces unless explicitly described, no clutter.'
+    : 'Negative: no text, no letters, no words, no logos, no watermarks, no close-up human faces unless explicitly described, no clutter.';
+
+  return `${referenceDirective}${anchor}${slideSpec.visualPrompt}. Visual style: ${mood}. Brand: ${brand.brandName}${brandSection}.${brandTypographyDirective} Maintain visual consistency across the carousel — same color palette, lighting direction, and mood. Aspect ratio 4:5 (1080x1350px). ${negative}`;
 }

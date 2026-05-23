@@ -80,6 +80,19 @@ export interface GenerateCarouselSlideImageArgs {
    * not safely reusable across carousels.
    */
   allowReuse?: boolean;
+  /**
+   * When set, the prompt instructs Gemini to render the brand name as
+   * designed typography integrated into the artwork (NOT a watermark). Only
+   * the single "stamped" slide of the carousel receives this — picked
+   * deterministically by `pickBrandStampIdx`.
+   *
+   * Side effects when set:
+   *  - reuse is force-disabled (a brand-typography image is inherently
+   *    specific to this brand + carousel and shouldn't travel across
+   *    projects via the image library);
+   *  - the result is NOT saved into the image library for the same reason.
+   */
+  brandTypography?: { brandName: string };
 }
 
 export interface SlideImageResult {
@@ -118,14 +131,22 @@ export interface SlideImageResult {
 export async function generateCarouselSlideImage(
   args: GenerateCarouselSlideImageArgs,
 ): Promise<SlideImageResult> {
-  const { brief, slide, brand, userId, carouselId, supabase, referenceImage, allowReuse } = args;
+  const { brief, slide, brand, userId, carouselId, supabase, referenceImage, allowReuse, brandTypography } = args;
 
   const path = `${userId}/${carouselId}/slide-${slide.idx}.png`;
   const projectId = brand.projectId;
   const reuseConfig = getReuseConfig();
 
+  // Brand-typography slides bake the brand name into the artwork itself.
+  // Those images are specific to this brand+carousel and don't travel safely
+  // across projects, so we force-disable both library reuse (input) and
+  // library indexing (output below).
+  const wantsBrandTypography =
+    !!brandTypography && brandTypography.brandName.trim().length > 0;
+  const effectiveAllowReuse = wantsBrandTypography ? false : allowReuse;
+
   // --- 1. Reuse: serve a stored image when one closely matches this slide ---
-  if (allowReuse && reuseConfig.enabled && projectId) {
+  if (effectiveAllowReuse && reuseConfig.enabled && projectId) {
     const match = await findReusableSlideImage({
       supabase,
       projectId,
@@ -183,21 +204,22 @@ export async function generateCarouselSlideImage(
   const prompt = buildVisualPrompt(slide, brief.stylePreset, brand, {
     topic: brief.topic,
     hasReferenceImage: referenceImage != null,
+    ...(wantsBrandTypography ? { brandTypography: { brandName: brandTypography!.brandName.trim() } } : {}),
   });
 
   let imageBytes: Buffer;
   try {
     imageBytes = await generateWithRetry(prompt, referenceImage);
   } catch (err) {
-    // Widen the fallback net: ANY error from Gemini (rate limit, network,
-    // safety, anything) routes to the recycle path when a projectId exists.
-    // Without a projectId we have nothing to query against, so just rethrow.
+    // Only fall back on rate-limit / quota failures. RAI-blocked prompts
+    // (CarouselSafetyBlockedError) require editing the brief, not recycling —
+    // bubbling them up unchanged lets the operator see the policy refusal.
     // The error.name check (instead of instanceof) sidesteps ESM dual-load
     // issues that can break instanceof across worker module boundaries.
     const errName = err instanceof Error ? err.name : '';
-    const errMsg = err instanceof Error ? err.message : String(err);
+    const isRateLimit = errName === 'CarouselRateLimitError';
 
-    if (projectId) {
+    if (isRateLimit && projectId) {
       const recycled = await findRecyclableSlide({
         supabase,
         projectId,
@@ -216,12 +238,11 @@ export async function generateCarouselSlideImage(
           console.log(
             JSON.stringify({
               fn: 'generateCarouselSlideImage',
-              step: 'recycled-on-gemini-failure',
+              step: 'recycled-on-rate-limit',
               carouselId,
               idx: slide.idx,
               sourceCarouselId: recycled.sourceCarouselId,
               sourceIdx: recycled.sourceIdx,
-              originalErrName: errName,
             }),
           );
           // Recycled images cost $0 (no Gemini call). `reused: true` keeps
@@ -235,25 +256,19 @@ export async function generateCarouselSlideImage(
             buffer: copied.buffer,
           };
         } catch (copyErr) {
-          const copyMsg = copyErr instanceof Error ? copyErr.message : String(copyErr);
           console.warn(
             JSON.stringify({
               fn: 'generateCarouselSlideImage',
               warn: 'recycle_copy_failed',
               carouselId,
               idx: slide.idx,
-              error: copyMsg,
+              error: copyErr instanceof Error ? copyErr.message : String(copyErr),
             }),
           );
-          // Bake the recycle result into the surfaced error so it shows up
-          // in `carousel_slides.error` — that lets the operator diagnose
-          // whether the recycle path ran at all, vs. a stale deploy.
-          throw new Error(`${errName || 'gemini_failed'}+recycle_copy_failed:${copyMsg}`);
+          // Copy failed mid-flight — fall through to rethrow the original
+          // rate-limit error so the slide is marked failed for that cause.
         }
       }
-      // No candidate found — surface a marker error so the DB row records
-      // that the recycle path was attempted.
-      throw new Error(`${errName || 'gemini_failed'}+recycle_no_candidate:${errMsg.slice(0, 80)}`);
     }
     throw err;
   }
@@ -269,7 +284,10 @@ export async function generateCarouselSlideImage(
   // --- 3. Index the fresh image into the library for future reuse ---
   // `saveSlideImageAsset` is self-gating (only reusable strategies) and never
   // throws — a failure here just means this image won't be reusable later.
-  if (reuseConfig.enabled && projectId) {
+  // Brand-typography slides are never indexed: the baked-in brand name makes
+  // them carousel-specific, and reusing one on a different project would ship
+  // the wrong name in the artwork.
+  if (!wantsBrandTypography && reuseConfig.enabled && projectId) {
     await saveSlideImageAsset({
       supabase,
       projectId,

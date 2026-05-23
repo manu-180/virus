@@ -434,3 +434,69 @@ function truncate(text: string, maxLen: number): string {
 
   return result + '…';
 }
+
+// ---------------------------------------------------------------------------
+// Brand-stamp slide selection
+//
+// We mark exactly ONE slide per carousel as the "branded" slide. The selected
+// idx flows into image generation (image-batch / regenerate-carousel-slide) so
+// that single slide's Gemini prompt includes a directive to integrate the
+// brand name as designed display typography in the artwork — magazine-cover
+// lettering, environmental signage, etc. — rather than a post-hoc watermark.
+//
+// The selection has to be DETERMINISTIC per carousel because:
+//  - generate-carousel-slides picks the idx once for the whole batch
+//  - regenerate-carousel-slide composes a SINGLE slide on demand later, and
+//    must agree with the original choice (otherwise the branded slide would
+//    silently lose its typography on regenerate).
+//
+// Strategy: hash the carouselId and pick an index in the "body" range
+// [1, slideCount-2]. We exclude:
+//  - idx 0 (the hook / cover — user explicitly asked for "not the first")
+//  - idx slideCount-1 (the CTA closer — text-heavy, no room for typography)
+//  - slides with role 'data' when known — those already render a giant
+//    bigNumber that would compete with the brand name.
+//
+// If the role-aware filter empties the eligible set (defensive: tiny
+// carousels, unusual role distributions), we fall back to the
+// count-based range so the choice still lands somewhere reasonable.
+// ---------------------------------------------------------------------------
+
+function hashCarouselId(carouselId: string): number {
+  let h = 0;
+  for (let i = 0; i < carouselId.length; i++) {
+    h = (h * 31 + carouselId.charCodeAt(i)) >>> 0;
+  }
+  return h;
+}
+
+/**
+ * Count-based fallback: works when callers only know `slideCount` and not the
+ * full role distribution (e.g. regenerate-carousel-slide loads ONE slide).
+ * Returns `null` when there is no eligible interior slide.
+ */
+export function pickBrandStampIdxFromCount(slideCount: number, carouselId: string): number | null {
+  if (slideCount <= 2) return null;
+  const range = slideCount - 2; // exclude idx 0 and idx slideCount-1
+  return 1 + (hashCarouselId(carouselId) % range);
+}
+
+/**
+ * Role-aware variant: when the caller has the full slide list available,
+ * prefer this — it skips 'hook'/'cta'/'data' slides explicitly so the brand
+ * name never lands on a number-heavy 'data' card or on the cover/closer.
+ */
+export function pickBrandStampIdx(
+  slides: { idx: number; role: SlideSpec['role'] }[],
+  carouselId: string,
+): number | null {
+  const eligible = slides
+    .filter((s) => s.role !== 'hook' && s.role !== 'cta' && s.role !== 'data')
+    .map((s) => s.idx);
+  if (eligible.length === 0) {
+    // Fall back to count-based pick if the role filter eliminated everything
+    return pickBrandStampIdxFromCount(slides.length, carouselId);
+  }
+  const sorted = eligible.slice().sort((a, b) => a - b);
+  return sorted[hashCarouselId(carouselId) % sorted.length] ?? null;
+}
