@@ -8,6 +8,7 @@ import {
   reuseSlideImage,
   saveSlideImageAsset,
 } from './image-library.js';
+import { findRecyclableSlide, copyRecycledSlide } from './image-recycle.js';
 import type { CarouselBrief, SlideSpec } from './types.js';
 import type { ProjectBrand } from '../viral/types.js';
 
@@ -175,12 +176,74 @@ export async function generateCarouselSlideImage(
   }
 
   // --- 2. Fresh generation with Gemini ---
+  // Wrapped in try/catch so we can fall back to recycling a past slide PNG
+  // when Gemini is unavailable (rate limit, quota exhausted, billing gap).
+  // See `image-recycle.ts` for the design rationale — this keeps the
+  // carousel pipeline shipping even when image generation is fully down.
   const prompt = buildVisualPrompt(slide, brief.stylePreset, brand, {
     topic: brief.topic,
     hasReferenceImage: referenceImage != null,
   });
 
-  const imageBytes = await generateWithRetry(prompt, referenceImage);
+  let imageBytes: Buffer;
+  try {
+    imageBytes = await generateWithRetry(prompt, referenceImage);
+  } catch (err) {
+    // Only fall back on rate-limit / quota failures. RAI-blocked prompts
+    // (CarouselSafetyBlockedError) require editing the brief, not recycling.
+    if (err instanceof CarouselRateLimitError && projectId) {
+      const recycled = await findRecyclableSlide({
+        supabase,
+        projectId,
+        role: slide.role,
+        stylePreset: brief.stylePreset,
+        excludeCarouselId: carouselId,
+      });
+
+      if (recycled) {
+        try {
+          const copied = await copyRecycledSlide({
+            supabase,
+            sourcePath: recycled.imagePath,
+            destPath: path,
+          });
+          console.log(
+            JSON.stringify({
+              fn: 'generateCarouselSlideImage',
+              step: 'recycled-on-rate-limit',
+              carouselId,
+              idx: slide.idx,
+              sourceCarouselId: recycled.sourceCarouselId,
+              sourceIdx: recycled.sourceIdx,
+            }),
+          );
+          // Recycled images cost $0 (no Gemini call). `reused: true` keeps
+          // the batch/cost accounting honest — usage_records won't log a
+          // spurious charge in `generate-carousel-slides`.
+          return {
+            path,
+            bytes: copied.bytes,
+            costCents: 0,
+            reused: true,
+            buffer: copied.buffer,
+          };
+        } catch (copyErr) {
+          console.warn(
+            JSON.stringify({
+              fn: 'generateCarouselSlideImage',
+              warn: 'recycle_copy_failed',
+              carouselId,
+              idx: slide.idx,
+              error: copyErr instanceof Error ? copyErr.message : String(copyErr),
+            }),
+          );
+          // Copy failed mid-flight — surface the original rate-limit error
+          // so the slide is marked failed for the same root cause.
+        }
+      }
+    }
+    throw err;
+  }
 
   const { error: uploadError } = await supabase.storage
     .from('carousels')
