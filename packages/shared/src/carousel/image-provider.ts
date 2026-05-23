@@ -189,9 +189,15 @@ export async function generateCarouselSlideImage(
   try {
     imageBytes = await generateWithRetry(prompt, referenceImage);
   } catch (err) {
-    // Only fall back on rate-limit / quota failures. RAI-blocked prompts
-    // (CarouselSafetyBlockedError) require editing the brief, not recycling.
-    if (err instanceof CarouselRateLimitError && projectId) {
+    // Widen the fallback net: ANY error from Gemini (rate limit, network,
+    // safety, anything) routes to the recycle path when a projectId exists.
+    // Without a projectId we have nothing to query against, so just rethrow.
+    // The error.name check (instead of instanceof) sidesteps ESM dual-load
+    // issues that can break instanceof across worker module boundaries.
+    const errName = err instanceof Error ? err.name : '';
+    const errMsg = err instanceof Error ? err.message : String(err);
+
+    if (projectId) {
       const recycled = await findRecyclableSlide({
         supabase,
         projectId,
@@ -210,11 +216,12 @@ export async function generateCarouselSlideImage(
           console.log(
             JSON.stringify({
               fn: 'generateCarouselSlideImage',
-              step: 'recycled-on-rate-limit',
+              step: 'recycled-on-gemini-failure',
               carouselId,
               idx: slide.idx,
               sourceCarouselId: recycled.sourceCarouselId,
               sourceIdx: recycled.sourceIdx,
+              originalErrName: errName,
             }),
           );
           // Recycled images cost $0 (no Gemini call). `reused: true` keeps
@@ -228,19 +235,25 @@ export async function generateCarouselSlideImage(
             buffer: copied.buffer,
           };
         } catch (copyErr) {
+          const copyMsg = copyErr instanceof Error ? copyErr.message : String(copyErr);
           console.warn(
             JSON.stringify({
               fn: 'generateCarouselSlideImage',
               warn: 'recycle_copy_failed',
               carouselId,
               idx: slide.idx,
-              error: copyErr instanceof Error ? copyErr.message : String(copyErr),
+              error: copyMsg,
             }),
           );
-          // Copy failed mid-flight — surface the original rate-limit error
-          // so the slide is marked failed for the same root cause.
+          // Bake the recycle result into the surfaced error so it shows up
+          // in `carousel_slides.error` — that lets the operator diagnose
+          // whether the recycle path ran at all, vs. a stale deploy.
+          throw new Error(`${errName || 'gemini_failed'}+recycle_copy_failed:${copyMsg}`);
         }
       }
+      // No candidate found — surface a marker error so the DB row records
+      // that the recycle path was attempted.
+      throw new Error(`${errName || 'gemini_failed'}+recycle_no_candidate:${errMsg.slice(0, 80)}`);
     }
     throw err;
   }
