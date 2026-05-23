@@ -53,15 +53,6 @@ export interface GenerateAllSlideImagesArgs {
   userId: string;
   carouselId: string;
   supabase: SupabaseClient;
-  /**
-   * When both are set, the slide whose idx matches `brandStampIdx` gets
-   * `brandTypography: { brandName }` passed to the image provider — i.e. that
-   * single slide will instruct Gemini to integrate the brand name as designed
-   * typography in the artwork. Picked deterministically per-carousel by
-   * `pickBrandStampIdx` so regenerate-carousel-slide produces a stable match.
-   */
-  brandName?: string;
-  brandStampIdx?: number | null;
   onSlideDone?: (idx: number, result: SlideSuccess) => Promise<void>;
 }
 
@@ -95,8 +86,6 @@ interface GenerateOneArgs {
   referenceImage?: Buffer;
   /** Allow the provider to serve this slide from the reusable image library. */
   allowReuse?: boolean;
-  /** When set, ask Gemini to bake this brand name into the artwork as typography. */
-  brandTypography?: { brandName: string };
   onSlideDone?: (idx: number, result: SlideSuccess) => Promise<void>;
 }
 
@@ -111,7 +100,6 @@ async function generateOne(args: GenerateOneArgs): Promise<SlideSuccessInternal 
       supabase: args.supabase,
       ...(args.referenceImage ? { referenceImage: args.referenceImage } : {}),
       ...(args.allowReuse ? { allowReuse: true } : {}),
-      ...(args.brandTypography ? { brandTypography: args.brandTypography } : {}),
     };
     const result = await generateCarouselSlideImage(providerArgs);
     const success: SlideSuccessInternal = { idx: args.slide.idx, ...result };
@@ -120,21 +108,6 @@ async function generateOne(args: GenerateOneArgs): Promise<SlideSuccessInternal 
   } catch (error) {
     return { idx: args.slide.idx, error };
   }
-}
-
-/**
- * Resolve whether a given slide idx should receive brand-typography treatment.
- * Returns the brandTypography payload (or undefined) so call sites can spread
- * it conditionally without repeating the validation logic.
- */
-function brandTypographyForIdx(
-  idx: number,
-  brandStampIdx: number | null | undefined,
-  brandName: string | undefined,
-): { brandName: string } | undefined {
-  if (brandStampIdx == null || idx !== brandStampIdx) return undefined;
-  if (!brandName || brandName.trim().length === 0) return undefined;
-  return { brandName: brandName.trim() };
 }
 
 /**
@@ -176,7 +149,7 @@ function resolveStrategy(brand: ProjectBrand): BrandImageProfile['subjectStrateg
 export async function generateAllSlideImages(
   args: GenerateAllSlideImagesArgs,
 ): Promise<BatchResult> {
-  const { brief, slides, brand, userId, carouselId, supabase, onSlideDone, brandName, brandStampIdx } = args;
+  const { brief, slides, brand, userId, carouselId, supabase, onSlideDone } = args;
 
   if (slides.length === 0) return { succeeded: [], failed: [] };
 
@@ -190,8 +163,6 @@ export async function generateAllSlideImages(
       carouselId,
       supabase,
       ...(onSlideDone ? { onSlideDone } : {}),
-      ...(brandName ? { brandName } : {}),
-      ...(brandStampIdx != null ? { brandStampIdx } : {}),
     });
   }
 
@@ -203,8 +174,6 @@ export async function generateAllSlideImages(
     carouselId,
     supabase,
     ...(onSlideDone ? { onSlideDone } : {}),
-    ...(brandName ? { brandName } : {}),
-    ...(brandStampIdx != null ? { brandStampIdx } : {}),
   });
 }
 
@@ -215,7 +184,7 @@ export async function generateAllSlideImages(
 async function generateAllSlideImagesAnchorChain(
   args: GenerateAllSlideImagesArgs,
 ): Promise<BatchResult> {
-  const { brief, slides, brand, userId, carouselId, supabase, onSlideDone, brandName, brandStampIdx } = args;
+  const { brief, slides, brand, userId, carouselId, supabase, onSlideDone } = args;
 
   const anchor = pickAnchor(slides);
   const rest = anchor ? slides.filter((s) => s.idx !== anchor.idx) : slides;
@@ -226,12 +195,8 @@ async function generateAllSlideImagesAnchorChain(
   // -------------------------------------------------------------------------
   // Step 1: generate the anchor alone so we can capture its bytes.
   // -------------------------------------------------------------------------
-  // Note: the brand-stamp idx is picked role-aware to land OUTSIDE the anchor
-  // (hooks are excluded), so in practice the anchor never receives
-  // brandTypography. We still resolve it here so the type checks line up.
   let referenceImage: Buffer | undefined;
   if (anchor) {
-    const anchorTypography = brandTypographyForIdx(anchor.idx, brandStampIdx, brandName);
     const anchorResult = await generateOne({
       slide: anchor,
       brief,
@@ -241,7 +206,6 @@ async function generateAllSlideImagesAnchorChain(
       supabase,
       // anchor itself never uses a reference
       ...(onSlideDone ? { onSlideDone } : {}),
-      ...(anchorTypography ? { brandTypography: anchorTypography } : {}),
     });
 
     if ('error' in anchorResult) {
@@ -258,35 +222,23 @@ async function generateAllSlideImagesAnchorChain(
   // Step 2: burst the remaining slides in parallel. If we have a reference
   // image from the anchor, every call goes image-to-image with that anchor;
   // otherwise we fall back to pure text-to-image.
-  //
-  // Brand-typography slides get the directive but ALSO skip the reference
-  // image: chaining a typography-heavy slide off the anchor would force the
-  // model to graft text onto a clean photo (back to "stamp" territory). Letting
-  // the typography slide regenerate purely from text gives Gemini room to
-  // compose the lettering into the scene from scratch.
   // -------------------------------------------------------------------------
   const limit = pLimit(CONCURRENCY);
 
   const restResults = await Promise.all(
     rest.map((slide) =>
-      limit(() => {
-        const typography = brandTypographyForIdx(slide.idx, brandStampIdx, brandName);
-        // Narrow `referenceImage` into a local that's either Buffer or absent.
-        // exactOptionalPropertyTypes refuses to accept `Buffer | undefined`
-        // through a spread, so we guard the spread on the narrowed local.
-        const effectiveReference = !typography && referenceImage ? referenceImage : undefined;
-        return generateOne({
+      limit(() =>
+        generateOne({
           slide,
           brief,
           brand,
           userId,
           carouselId,
           supabase,
-          ...(effectiveReference ? { referenceImage: effectiveReference } : {}),
+          ...(referenceImage ? { referenceImage } : {}),
           ...(onSlideDone ? { onSlideDone } : {}),
-          ...(typography ? { brandTypography: typography } : {}),
-        });
-      }),
+        }),
+      ),
     ),
   );
 
@@ -320,7 +272,7 @@ async function generateAllSlideImagesAnchorChain(
 async function generateAllSlideImagesIndependent(
   args: GenerateAllSlideImagesArgs,
 ): Promise<BatchResult> {
-  const { brief, slides, brand, userId, carouselId, supabase, onSlideDone, brandName, brandStampIdx } = args;
+  const { brief, slides, brand, userId, carouselId, supabase, onSlideDone } = args;
 
   const succeeded: SlideSuccessInternal[] = [];
   const failed: SlideFailed[] = [];
@@ -328,24 +280,21 @@ async function generateAllSlideImagesIndependent(
 
   const results = await Promise.all(
     slides.map((slide) =>
-      limit(() => {
-        const typography = brandTypographyForIdx(slide.idx, brandStampIdx, brandName);
-        return generateOne({
+      limit(() =>
+        generateOne({
           slide,
           brief,
           brand,
           userId,
           carouselId,
           supabase,
-          // No referenceImage — independent generation. Reuse IS allowed for
-          // ordinary slides (world-anchor / standalone slides are self-described
-          // and travel safely across carousels). The brand-typography slide
-          // skips reuse and library-indexing inside generateCarouselSlideImage.
+          // No referenceImage — independent generation. Reuse IS allowed here:
+          // world-anchor / standalone slides are self-described and travel
+          // safely across carousels.
           allowReuse: true,
           ...(onSlideDone ? { onSlideDone } : {}),
-          ...(typography ? { brandTypography: typography } : {}),
-        });
-      }),
+        }),
+      ),
     ),
   );
 

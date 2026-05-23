@@ -1,23 +1,26 @@
 import { describe, it, expect } from 'vitest';
+import { writeFile, mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import sharp from 'sharp';
 import {
+  composeSlide,
   pickBrandStampIdx,
   pickBrandStampIdxFromCount,
 } from '../composer.js';
-import { buildVisualPrompt } from '../prompts.js';
+import { STYLE_PRESETS } from '../templates.js';
 import type { SlideSpec } from '../types.js';
-import type { ProjectBrand } from '../../viral/types.js';
 
-// Brand stamp moved from Satori-overlay to Gemini-prompt: we no longer
-// composite a "watermark" on top of a clean photo. Instead, the chosen slide's
-// generation prompt asks Gemini to bake the brand name into the artwork as
-// display typography. These tests cover both pieces:
-//
-//  1. The deterministic idx pickers still work (they now feed the image-
-//     generation step instead of the composer).
-//  2. buildVisualPrompt honors the `brandTypography` option correctly:
-//     drops the "no text" negative and injects an integration directive.
+const OUT_DIR = path.join(process.cwd(), 'tmp-carousel-samples');
 
-describe('brand stamp — idx selection', () => {
+async function makeBase(): Promise<Buffer> {
+  return sharp({
+    create: { width: 1080, height: 1350, channels: 3, background: { r: 28, g: 28, b: 36 } },
+  })
+    .png()
+    .toBuffer();
+}
+
+describe('brand stamp', () => {
   it('pickBrandStampIdxFromCount is deterministic per carouselId', () => {
     const a = pickBrandStampIdxFromCount(8, 'carousel-abc-123');
     const b = pickBrandStampIdxFromCount(8, 'carousel-abc-123');
@@ -50,63 +53,40 @@ describe('brand stamp — idx selection', () => {
     );
     expect([1, 3, 4]).toContain(idx);
   });
-});
 
-describe('brand stamp — buildVisualPrompt brandTypography integration', () => {
-  // Minimal brand without imageProfile so we hit the legacy path. Both paths
-  // honor brandTypography; we test the legacy one because it's the simpler
-  // surface and exercises the same negative-line + directive swap.
-  const baseBrand: ProjectBrand = {
-    projectId: 'proj-1',
-    brandName: 'APEX',
-    oneLiner: 'we ship things',
-    voiceTone: 'direct',
-    ctas: [],
-    doNotSay: [],
-    audience: { who: '', where: '', pains: [] },
-    valueProps: [],
-    features: [],
-    caseStudies: [],
-    parsedAt: '2026-05-21T00:00:00.000Z',
-  };
+  it('renders a stamped slide for each preset (visual sample written to tmp-carousel-samples/)', async () => {
+    await mkdir(OUT_DIR, { recursive: true });
 
-  const slide: SlideSpec = {
-    idx: 2,
-    role: 'insight',
-    headline: 'Test',
-    visualPrompt: 'a minimal sculpture in soft light',
-  };
+    const base = await makeBase();
+    const slide: SlideSpec = {
+      idx: 1,
+      role: 'problem',
+      headline: 'No te paga el tiempo',
+      body: 'Si cobrás por hora, ganás cuando trabajás más. El modelo está roto.',
+      visualPrompt: 'test',
+    };
 
-  it('without brandTypography: forbids text and does not mention the brand integration', () => {
-    const prompt = buildVisualPrompt(slide, 'minimal', baseBrand, {});
-    expect(prompt).toContain('no text');
-    expect(prompt).toContain('no letters');
-    expect(prompt).not.toContain('Integrate the word');
-  });
+    for (const [name, preset] of Object.entries(STYLE_PRESETS)) {
+      for (const brandName of ['APEX', 'Assistify']) {
+        const composed = await composeSlide({
+          baseImage: base,
+          slide,
+          preset,
+          brandStamp: brandName,
+        });
 
-  it('with brandTypography: injects integration directive and removes the generic text ban', () => {
-    const prompt = buildVisualPrompt(slide, 'minimal', baseBrand, {
-      brandTypography: { brandName: 'APEX' },
-    });
-    // Integration directive present and spells the name verbatim.
-    expect(prompt).toContain('Integrate the word "APEX"');
-    expect(prompt).toContain('NOT a watermark');
-    expect(prompt).toContain('NOT a logo stamp');
-    // Generic "no text/letters/words" ban must NOT be there — that's the whole
-    // point of the switch, otherwise Gemini will refuse to render the brand.
-    expect(prompt).not.toContain('no text,');
-    expect(prompt).not.toContain('no letters');
-    expect(prompt).not.toContain('no words');
-    // We still want to ban WATERMARKS and stray text, just not all lettering.
-    expect(prompt).toContain('no extra text beyond the brand name');
-    expect(prompt).toContain('no watermarks');
-  });
+        const meta = await sharp(composed).metadata();
+        expect(meta.width).toBe(1080);
+        expect(meta.height).toBe(1350);
+        expect(meta.format).toBe('png');
+        expect(composed.length).toBeGreaterThan(1000);
 
-  it('with empty brandTypography.brandName: behaves as if no brandTypography', () => {
-    const prompt = buildVisualPrompt(slide, 'minimal', baseBrand, {
-      brandTypography: { brandName: '   ' },
-    });
-    expect(prompt).not.toContain('Integrate the word');
-    expect(prompt).toContain('no text');
-  });
+        await writeFile(path.join(OUT_DIR, `stamp-${name}-${brandName}.png`), composed);
+
+        // Stamped version should differ from un-stamped (proves the stamp layer was rendered).
+        const noStamp = await composeSlide({ baseImage: base, slide, preset });
+        expect(composed).not.toEqual(noStamp);
+      }
+    }
+  }, 120_000);
 });

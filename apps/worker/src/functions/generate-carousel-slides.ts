@@ -22,11 +22,7 @@
 
 import { inngest } from '../inngest/index.js';
 import { getAdminClient } from '../lib/supabase.js';
-import {
-  generateAllSlideImages,
-  pickBrandStampIdx,
-  type SlideSuccess,
-} from '@virus/shared/carousel';
+import { generateAllSlideImages, type SlideSuccess } from '@virus/shared/carousel';
 import type { CarouselBrief, SlideSpec } from '@virus/shared/carousel';
 import type { ProjectBrand } from '@virus/shared/viral';
 
@@ -236,25 +232,6 @@ export const generateCarouselSlides = inngest.createFunction(
 
     const slideSpecs = slideRows.map(slideRowToSpec);
 
-    // Brand-typography pick: choose ONE slide whose generated image will bake
-    // the brand name into the artwork (designed lettering, not a watermark).
-    // The selection is deterministic over carouselId so the regenerate path
-    // can agree with this choice without DB state. Role-aware: never lands on
-    // hook / cta / data slides. Returns null when the brand has no name or the
-    // carousel has no eligible interior slide.
-    const brandStampInput = slideSpecs.map((s) => ({ idx: s.idx, role: s.role }));
-    const brandName = brand.brandName?.trim() ?? '';
-    const stampIdx =
-      brandName.length > 0 ? pickBrandStampIdx(brandStampInput, carouselId) : null;
-
-    console.log(JSON.stringify({
-      fn: 'generate-carousel-slides',
-      step: 'brand-stamp-pick',
-      carouselId,
-      brandName,
-      stampIdx,
-    }));
-
     // ------------------------------------------------------------------
     // 2. Generate all slide images (concurrency controlled by pLimit inside lib)
     // ------------------------------------------------------------------
@@ -268,8 +245,6 @@ export const generateCarouselSlides = inngest.createFunction(
         userId,
         carouselId,
         supabase: db,
-        ...(brandName.length > 0 ? { brandName } : {}),
-        ...(stampIdx !== null ? { brandStampIdx: stampIdx } : {}),
         onSlideDone: async (idx, success) => {
           // Update DB inline — upsert is idempotent on retry.
           // status stays 'generating' here — only compose-carousel-overlay flips

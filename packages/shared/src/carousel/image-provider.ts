@@ -79,19 +79,6 @@ export interface GenerateCarouselSlideImageArgs {
    * not safely reusable across carousels.
    */
   allowReuse?: boolean;
-  /**
-   * When set, the prompt instructs Gemini to render the brand name as
-   * designed typography integrated into the artwork (NOT a watermark). Only
-   * the single "stamped" slide of the carousel receives this — picked
-   * deterministically by `pickBrandStampIdx`.
-   *
-   * Side effects when set:
-   *  - reuse is force-disabled (a brand-typography image is inherently
-   *    specific to this brand + carousel and shouldn't travel across
-   *    projects via the image library);
-   *  - the result is NOT saved into the image library for the same reason.
-   */
-  brandTypography?: { brandName: string };
 }
 
 export interface SlideImageResult {
@@ -130,22 +117,14 @@ export interface SlideImageResult {
 export async function generateCarouselSlideImage(
   args: GenerateCarouselSlideImageArgs,
 ): Promise<SlideImageResult> {
-  const { brief, slide, brand, userId, carouselId, supabase, referenceImage, allowReuse, brandTypography } = args;
+  const { brief, slide, brand, userId, carouselId, supabase, referenceImage, allowReuse } = args;
 
   const path = `${userId}/${carouselId}/slide-${slide.idx}.png`;
   const projectId = brand.projectId;
   const reuseConfig = getReuseConfig();
 
-  // Brand-typography slides bake the brand name into the artwork itself.
-  // Those images are specific to this brand+carousel and don't travel safely
-  // across projects, so we force-disable both library reuse (input) and
-  // library indexing (output below).
-  const wantsBrandTypography =
-    !!brandTypography && brandTypography.brandName.trim().length > 0;
-  const effectiveAllowReuse = wantsBrandTypography ? false : allowReuse;
-
   // --- 1. Reuse: serve a stored image when one closely matches this slide ---
-  if (effectiveAllowReuse && reuseConfig.enabled && projectId) {
+  if (allowReuse && reuseConfig.enabled && projectId) {
     const match = await findReusableSlideImage({
       supabase,
       projectId,
@@ -199,7 +178,6 @@ export async function generateCarouselSlideImage(
   const prompt = buildVisualPrompt(slide, brief.stylePreset, brand, {
     topic: brief.topic,
     hasReferenceImage: referenceImage != null,
-    ...(wantsBrandTypography ? { brandTypography: { brandName: brandTypography!.brandName.trim() } } : {}),
   });
 
   const imageBytes = await generateWithRetry(prompt, referenceImage);
@@ -215,10 +193,7 @@ export async function generateCarouselSlideImage(
   // --- 3. Index the fresh image into the library for future reuse ---
   // `saveSlideImageAsset` is self-gating (only reusable strategies) and never
   // throws — a failure here just means this image won't be reusable later.
-  // Brand-typography slides are never indexed: the baked-in brand name makes
-  // them carousel-specific, and reusing one on a different project would ship
-  // the wrong name in the artwork.
-  if (!wantsBrandTypography && reuseConfig.enabled && projectId) {
+  if (reuseConfig.enabled && projectId) {
     await saveSlideImageAsset({
       supabase,
       projectId,
