@@ -19,20 +19,13 @@ export interface ComposeSlideArgs {
   baseImage: Buffer;
   slide: SlideSpec;
   preset: StylePreset;
-  /**
-   * When provided, renders a large stylized brand-name "stamp" in the upper
-   * portion of the slide — feels like a graphic-design accent baked into the
-   * photo (think APEX/Assistify big-text watermark). Caller decides which
-   * single slide of the carousel gets the stamp; the composer just renders it.
-   */
-  brandStamp?: string;
 }
 
 const SLIDE_WIDTH = 1080;
 const SLIDE_HEIGHT = 1350;
 
 export async function composeSlide(args: ComposeSlideArgs): Promise<Buffer> {
-  const { baseImage, slide, preset, brandStamp } = args;
+  const { baseImage, slide, preset } = args;
 
   // Defense-in-depth: refuse to compose a slide with an empty headline.
   // Without this, Satori would happily render the layout with an empty <div>
@@ -46,13 +39,7 @@ export async function composeSlide(args: ComposeSlideArgs): Promise<Buffer> {
   const fonts = await loadFonts();
   const overrides = getLayoutForRole(slide.role, preset, slide.body);
 
-  const stamp = brandStamp && brandStamp.trim().length > 0 ? brandStamp.trim() : undefined;
-  const element = buildLayout({
-    slide,
-    preset,
-    overrides,
-    ...(stamp ? { brandStamp: stamp } : {}),
-  });
+  const element = buildLayout({ slide, preset, overrides });
 
   const svgString = await satori(
     element as unknown as Parameters<typeof satori>[0],
@@ -111,109 +98,21 @@ interface LayoutArgs {
   slide: SlideSpec;
   preset: StylePreset;
   overrides: LayoutOverrides;
-  /** Optional brand stamp text (e.g. "APEX", "ASSISTIFY") rendered behind the headline. */
-  brandStamp?: string;
 }
 
-function buildLayout({ slide, preset, overrides, brandStamp }: LayoutArgs): SatoriNode {
+function buildLayout({ slide, preset, overrides }: LayoutArgs): SatoriNode {
   const { layoutStyle } = preset;
-  const childArgs: LayoutArgs = {
-    slide,
-    preset,
-    overrides,
-    ...(brandStamp ? { brandStamp } : {}),
-  };
 
-  if (layoutStyle === 'editorial') return buildEditorialLayout(childArgs);
-  if (layoutStyle === 'center-stack') return buildCenterStackLayout(childArgs);
-  return buildBottomStackLayout(childArgs);
-}
-
-// ---------------------------------------------------------------------------
-// Brand stamp — large translucent "watermark"-style brand-name layer rendered
-// in the upper area of the slide. It sits inside the layout root with
-// position:absolute so it overlays the photo without disrupting the flex
-// flow of the actual content (eyebrow / title / body / number).
-//
-// Visual intent: feel like a graphic-design backdrop baked into the photo,
-// the way some AI-generated images naturally include the brand name behind
-// the subject. Only ONE slide per carousel should receive a stamp — the
-// caller decides which idx, this helper just renders it.
-//
-// Typography: forces Archivo Black (900) regardless of preset because it's
-// the only consistently-loaded display-weight font (see fonts.ts), and the
-// stamp needs that punch to read as a deliberate design element rather than
-// noise. Color uses the preset's textColor with low opacity so it always
-// contrasts against the overlay underneath.
-// ---------------------------------------------------------------------------
-
-// Sizing strategy: Archivo Black renders ~1.0 of fontSize wide per character
-// after our -0.04em letter-spacing. Slide is 1080px; we want the stamp to fit
-// inside ~880px of usable width so the rotation doesn't push letters off the
-// canvas. These caps are deliberately conservative — better a slightly small
-// stamp than a cropped one.
-function autoFontSizeForStamp(text: string): number {
-  const charCount = Math.max(text.length, 1);
-  if (charCount <= 3) return 260;
-  if (charCount <= 4) return 220;
-  if (charCount <= 5) return 180;
-  if (charCount <= 6) return 150;
-  if (charCount <= 8) return 120;
-  if (charCount <= 10) return 100;
-  if (charCount <= 12) return 88;
-  return 72;
-}
-
-function buildBrandStampNode(text: string, _preset: StylePreset): SatoriNode {
-  const upper = text.toUpperCase();
-  const fontSize = autoFontSizeForStamp(upper);
-
-  return {
-    type: 'div',
-    props: {
-      style: {
-        position: 'absolute' as const,
-        top: '14%',
-        left: 0,
-        right: 0,
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'flex-start',
-      },
-      children: [
-        {
-          type: 'div',
-          props: {
-            style: {
-              display: 'flex',
-              fontSize,
-              fontWeight: 900,
-              // White at low opacity reads on dark photo areas (most carousel
-              // base images sit in the medium-to-dark range from Gemini). We
-              // deliberately don't reuse preset.textColor — that's the headline
-              // color (often yellow in 'bold'), and we don't want the stamp to
-              // color-match the headline.
-              color: '#FFFFFF',
-              fontFamily: 'Archivo Black',
-              letterSpacing: '-0.03em',
-              textTransform: 'uppercase' as const,
-              lineHeight: 1,
-              opacity: 0.32,
-              transform: 'rotate(-3deg)',
-            },
-            children: [upper],
-          },
-        },
-      ],
-    },
-  };
+  if (layoutStyle === 'editorial') return buildEditorialLayout({ slide, preset, overrides });
+  if (layoutStyle === 'center-stack') return buildCenterStackLayout({ slide, preset, overrides });
+  return buildBottomStackLayout({ slide, preset, overrides });
 }
 
 // ---------------------------------------------------------------------------
 // bottom-stack (minimal) — eyebrow at top, title+body flush bottom
 // ---------------------------------------------------------------------------
 
-function buildBottomStackLayout({ slide, preset, overrides, brandStamp }: LayoutArgs): SatoriNode {
+function buildBottomStackLayout({ slide, preset, overrides }: LayoutArgs): SatoriNode {
   const p = preset.padding;
   const titleSize = Math.round(preset.titleSize * overrides.titleSizeMultiplier);
   const headline = applyCase(truncate(slide.headline, 40), preset.titleUppercase);
@@ -222,10 +121,6 @@ function buildBottomStackLayout({ slide, preset, overrides, brandStamp }: Layout
   const eyebrow = overrides.showEyebrow ? buildEyebrowChip(slide.role, preset) : emptyDiv();
   const titleEl = buildTitleEl(headline, titleSize, preset, overrides);
   const textBlock = buildTextBlock(titleEl, body, preset, overrides);
-
-  const children: SatoriNode[] = [];
-  if (brandStamp) children.push(buildBrandStampNode(brandStamp, preset));
-  children.push(eyebrow, textBlock);
 
   return {
     type: 'div',
@@ -239,9 +134,8 @@ function buildBottomStackLayout({ slide, preset, overrides, brandStamp }: Layout
         padding: p,
         background: resolveOverlay(preset),
         fontFamily: preset.bodyFont,
-        position: 'relative' as const,
       },
-      children,
+      children: [eyebrow, textBlock],
     },
   };
 }
@@ -250,7 +144,7 @@ function buildBottomStackLayout({ slide, preset, overrides, brandStamp }: Layout
 // center-stack (bold) — solid bottom overlay, content centered within it
 // ---------------------------------------------------------------------------
 
-function buildCenterStackLayout({ slide, preset, overrides, brandStamp }: LayoutArgs): SatoriNode {
+function buildCenterStackLayout({ slide, preset, overrides }: LayoutArgs): SatoriNode {
   const p = preset.padding;
   const titleSize = Math.round(preset.titleSize * overrides.titleSizeMultiplier);
   const headline = applyCase(truncate(slide.headline, 40), preset.titleUppercase);
@@ -258,10 +152,6 @@ function buildCenterStackLayout({ slide, preset, overrides, brandStamp }: Layout
 
   const titleEl = buildTitleEl(headline, titleSize, preset, overrides);
   const textBlock = buildTextBlock(titleEl, body, preset, overrides);
-
-  const children: SatoriNode[] = [];
-  if (brandStamp) children.push(buildBrandStampNode(brandStamp, preset));
-  children.push(textBlock);
 
   return {
     type: 'div',
@@ -275,9 +165,8 @@ function buildCenterStackLayout({ slide, preset, overrides, brandStamp }: Layout
         padding: p,
         background: resolveOverlay(preset),
         fontFamily: preset.bodyFont,
-        position: 'relative' as const,
       },
-      children,
+      children: [textBlock],
     },
   };
 }
@@ -286,7 +175,7 @@ function buildCenterStackLayout({ slide, preset, overrides, brandStamp }: Layout
 // editorial — header row (eyebrow + slide number) + title+body at bottom
 // ---------------------------------------------------------------------------
 
-function buildEditorialLayout({ slide, preset, overrides, brandStamp }: LayoutArgs): SatoriNode {
+function buildEditorialLayout({ slide, preset, overrides }: LayoutArgs): SatoriNode {
   const p = preset.padding;
   const titleSize = Math.round(preset.titleSize * overrides.titleSizeMultiplier);
   const headline = applyCase(truncate(slide.headline, 40), preset.titleUppercase);
@@ -344,10 +233,6 @@ function buildEditorialLayout({ slide, preset, overrides, brandStamp }: LayoutAr
   const titleEl = buildTitleEl(headline, titleSize, preset, overrides);
   const textBlock = buildTextBlock(titleEl, body, preset, overrides);
 
-  const children: SatoriNode[] = [];
-  if (brandStamp) children.push(buildBrandStampNode(brandStamp, preset));
-  children.push(header, textBlock);
-
   return {
     type: 'div',
     props: {
@@ -360,9 +245,8 @@ function buildEditorialLayout({ slide, preset, overrides, brandStamp }: LayoutAr
         padding: p,
         background: resolveOverlay(preset),
         fontFamily: preset.bodyFont,
-        position: 'relative' as const,
       },
-      children,
+      children: [header, textBlock],
     },
   };
 }
@@ -525,67 +409,6 @@ function applyCase(text: string, uppercase: boolean): string {
 
 function emptyDiv(): SatoriNode {
   return { type: 'div', props: { style: { display: 'flex' }, children: [] } };
-}
-
-// ---------------------------------------------------------------------------
-// Brand-stamp slide selection
-//
-// We mark exactly ONE slide per carousel with a big translucent brand-name
-// stamp. The selection has to be DETERMINISTIC per carousel because:
-//  - compose-carousel-overlay composes the whole batch in one pass
-//  - regenerate-carousel-slide composes a SINGLE slide on demand later, and
-//    must agree with the original choice (otherwise the regenerated slide
-//    would either lose its stamp or steal one from a sibling slide).
-//
-// Strategy: hash the carouselId and pick an index in the "body" range
-// [1, slideCount-2]. We exclude:
-//  - idx 0 (the hook / cover — user explicitly asked for "not the first")
-//  - idx slideCount-1 (the CTA closer — text-heavy, no room for a stamp)
-//  - slides with role 'data' when known — those already render a giant
-//    bigNumber that would compete with the stamp.
-//
-// If the role-aware filter empties the eligible set (defensive: tiny
-// carousels, unusual role distributions), we fall back to the
-// count-based range so the stamp still lands somewhere reasonable.
-// ---------------------------------------------------------------------------
-
-function hashCarouselId(carouselId: string): number {
-  let h = 0;
-  for (let i = 0; i < carouselId.length; i++) {
-    h = (h * 31 + carouselId.charCodeAt(i)) >>> 0;
-  }
-  return h;
-}
-
-/**
- * Count-based fallback: works when callers only know `slideCount` and not the
- * full role distribution (e.g. regenerate-carousel-slide loads ONE slide).
- * Returns `null` when there is no eligible interior slide.
- */
-export function pickBrandStampIdxFromCount(slideCount: number, carouselId: string): number | null {
-  if (slideCount <= 2) return null;
-  const range = slideCount - 2; // exclude idx 0 and idx slideCount-1
-  return 1 + (hashCarouselId(carouselId) % range);
-}
-
-/**
- * Role-aware variant: when the caller has the full slide list available
- * (compose-carousel-overlay), prefer this — it skips 'hook'/'cta'/'data'
- * slides explicitly so the stamp never lands on a number-heavy 'data' card.
- */
-export function pickBrandStampIdx(
-  slides: { idx: number; role: SlideSpec['role'] }[],
-  carouselId: string,
-): number | null {
-  const eligible = slides
-    .filter((s) => s.role !== 'hook' && s.role !== 'cta' && s.role !== 'data')
-    .map((s) => s.idx);
-  if (eligible.length === 0) {
-    // Fall back to count-based pick if the role filter eliminated everything
-    return pickBrandStampIdxFromCount(slides.length, carouselId);
-  }
-  const sorted = eligible.slice().sort((a, b) => a - b);
-  return sorted[hashCarouselId(carouselId) % sorted.length] ?? null;
 }
 
 // Truncate without cutting a word in half. Walks back from `maxLen` to the

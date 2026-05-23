@@ -16,12 +16,7 @@
 
 import { inngest } from '../inngest/index.js';
 import { getAdminClient } from '../lib/supabase.js';
-import {
-  composeAllSlides,
-  STYLE_PRESETS,
-  applyBrandOverrides,
-  pickBrandStampIdx,
-} from '@virus/shared/carousel';
+import { composeAllSlides, STYLE_PRESETS, applyBrandOverrides } from '@virus/shared/carousel';
 import type { SlideSpec } from '@virus/shared/carousel';
 import type { StylePreset } from '@virus/shared/carousel';
 
@@ -32,11 +27,6 @@ import type { StylePreset } from '@virus/shared/carousel';
 interface CarouselProjectRow {
   style_preset: string;
   project_id: string;
-}
-
-interface BrandRow {
-  brand_name: string | null;
-  visual_style: BrandVisualStyle | null;
 }
 
 interface BrandVisualStyle {
@@ -127,7 +117,7 @@ export const composeCarouselOverlay = inngest.createFunction(
     // ------------------------------------------------------------------
     // 1. Load slides that have a base image
     // ------------------------------------------------------------------
-    const { slides, preset, brandName } = await step.run('load-slides', async () => {
+    const { slides, preset } = await step.run('load-slides', async () => {
       const db = getAdminClient();
 
       const { data: carouselRow, error: carouselErr } = await db
@@ -144,14 +134,12 @@ export const composeCarouselOverlay = inngest.createFunction(
 
       const { data: brandRow } = await db
         .from('project_brand')
-        .select('brand_name, visual_style')
+        .select('visual_style')
         .eq('project_id', project_id)
         .eq('is_current', true)
         .single();
 
-      const brand = (brandRow as BrandRow | null) ?? null;
-      const visualStyle = brand?.visual_style ?? undefined;
-      const resolvedBrandName = brand?.brand_name?.trim() ?? '';
+      const visualStyle = (brandRow?.visual_style as BrandVisualStyle | null) ?? undefined;
 
       const { data: slideRows, error: slidesErr } = await db
         .from('carousel_slides')
@@ -172,13 +160,11 @@ export const composeCarouselOverlay = inngest.createFunction(
         carouselId,
         slideCount: rows.length,
         preset: style_preset,
-        brandName: resolvedBrandName,
       }));
 
       return {
         slides: rows,
         preset: resolvePreset(style_preset, visualStyle),
-        brandName: resolvedBrandName,
       };
     });
 
@@ -232,33 +218,12 @@ export const composeCarouselOverlay = inngest.createFunction(
 
       const slidesToCompose = specsWithRows.filter((s) => !specHasEmptyHeadline(s.spec));
 
-      // Deterministically pick one interior slide to receive the brand stamp.
-      // Role-aware picker excludes hook/cta/data so the stamp never lands on
-      // the cover, the closer, or a number-card. If the brand has no name (or
-      // the carousel only has hook+cta), no stamp is rendered.
-      const stampIdx = brandName.length > 0
-        ? pickBrandStampIdx(
-            slidesToCompose.map((s) => ({ idx: s.idx, role: s.spec.role })),
-            carouselId,
-          )
-        : null;
-
-      console.log(JSON.stringify({
-        fn: 'compose-carousel-overlay',
-        step: 'brand-stamp-pick',
-        carouselId,
-        brandName,
-        stampIdx,
-      }));
-
       const result = await composeAllSlides({
         slides: slidesToCompose,
         preset,
         userId,
         carouselId,
         supabase: db,
-        ...(brandName.length > 0 ? { brandName } : {}),
-        ...(stampIdx !== null ? { brandStampIdx: stampIdx } : {}),
         onSlideDone: async (idx, success) => {
           console.log(JSON.stringify({
             fn: 'compose-carousel-overlay',
@@ -267,7 +232,6 @@ export const composeCarouselOverlay = inngest.createFunction(
             idx,
             path: success.path,
             bytes: success.bytes,
-            stamped: idx === stampIdx,
             ms: Date.now(),
           }));
         },
