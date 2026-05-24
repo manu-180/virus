@@ -8,6 +8,10 @@ config({ path: resolve(process.cwd(), '.env.local'), override: true });
 // alongside shared-package changes forces a worker redeploy when the new code
 // needs to land in production. If you see this marker comment alone in a
 // commit, the diff in packages/shared is the real payload.
+//
+// 2026-05-23 redeploy: bundles the instagram-graph waitForContainerReady fix
+// for Meta's status_code endpoint regression that started rejecting Page
+// tokens with GraphMethodException on 2026-05-22.
 
 import http from 'node:http';
 import { serve } from 'inngest/node';

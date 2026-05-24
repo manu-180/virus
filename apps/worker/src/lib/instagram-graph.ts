@@ -340,10 +340,30 @@ async function createCarouselContainer(
 }
 
 /**
+ * Time we sleep — instead of polling — when Meta's status_code endpoint
+ * stops accepting our Page token (see polling-blocked branch below). 25s is
+ * enough for a normal carousel to finish processing internally; the caller's
+ * publishContainer() will then either succeed or surface a real error.
+ */
+const POLLING_BLOCKED_FALLBACK_MS = 25_000;
+
+/**
  * Poll until the parent container reaches FINISHED. Throws on ERROR / EXPIRED
  * or if we exceed maxWaitMs.
  *
  * Meta typically takes 5-30s to process a carousel. We poll every 3s.
+ *
+ * **Polling-blocked fallback (2026-05-22 regression)**: Around that date Meta
+ * began returning `GraphMethodException: Authorization Error` (code 100,
+ * error_subcode 33) on `GET /{containerId}?fields=status_code` when called
+ * with a long-lived Page token — the same token that creates the container
+ * and successfully calls `/media_publish`. The container itself is fine;
+ * we just can't read its status. We detect the specific error shape, wait a
+ * fixed amount, and return — letting `publishContainer` either succeed or
+ * surface a genuine downstream error (image_url unreachable, etc.). Without
+ * this branch the publish-carousel-to-instagram function records a misleading
+ * `Authorization Error` and the user is told to re-connect Instagram even
+ * though the token is perfectly valid.
  */
 async function waitForContainerReady(
   containerId: string,
@@ -353,21 +373,31 @@ async function waitForContainerReady(
   const deadline = Date.now() + maxWaitMs;
   let lastStatus = 'IN_PROGRESS';
   while (Date.now() < deadline) {
-    const res = await graphCall<ContainerStatus>(
-      'GET',
-      `/${containerId}`,
-      { fields: 'status_code', access_token: accessToken },
-    );
-    lastStatus = res.status_code;
-    if (lastStatus === 'FINISHED') return;
-    if (lastStatus === 'ERROR' || lastStatus === 'EXPIRED') {
-      throw new InstagramGraphError({
-        code: 'container_processing_failed',
-        message: `container ${containerId} status=${lastStatus}`,
-        httpStatus: 502,
-        terminal: true,
-        authError: false,
-      });
+    try {
+      const res = await graphCall<ContainerStatus>(
+        'GET',
+        `/${containerId}`,
+        { fields: 'status_code', access_token: accessToken },
+      );
+      lastStatus = res.status_code;
+      if (lastStatus === 'FINISHED') return;
+      if (lastStatus === 'ERROR' || lastStatus === 'EXPIRED') {
+        throw new InstagramGraphError({
+          code: 'container_processing_failed',
+          message: `container ${containerId} status=${lastStatus}`,
+          httpStatus: 502,
+          terminal: true,
+          authError: false,
+        });
+      }
+    } catch (err) {
+      if (err instanceof InstagramGraphError && isPollingBlocked(err)) {
+        // Meta rejected our poll — assume the container is processing and
+        // give it a fixed window to finish before letting publish proceed.
+        await new Promise((r) => setTimeout(r, POLLING_BLOCKED_FALLBACK_MS));
+        return;
+      }
+      throw err;
     }
     await new Promise((r) => setTimeout(r, pollIntervalMs));
   }
@@ -378,6 +408,18 @@ async function waitForContainerReady(
     terminal: false,
     authError: false,
   });
+}
+
+/**
+ * Detect the 2026-05-22 regression signature on the status_code endpoint.
+ * Narrow on `metaCode === 100` + `code === 'GraphMethodException'` so we
+ * don't accidentally swallow real auth failures (those report 190/200/etc).
+ */
+function isPollingBlocked(err: InstagramGraphError): boolean {
+  return (
+    err.info.metaCode === 100 &&
+    err.info.code === 'GraphMethodException'
+  );
 }
 
 async function publishContainer(
