@@ -12,6 +12,12 @@ config({ path: resolve(process.cwd(), '.env.local'), override: true });
 // 2026-05-23 redeploy: bundles the instagram-graph waitForContainerReady fix
 // for Meta's status_code endpoint regression that started rejecting Page
 // tokens with GraphMethodException on 2026-05-22.
+//
+// 2026-05-25 redeploy: ships the auto-share-first-slide-to-Stories feature.
+// The new publishStoryToInstagram Inngest function lives in apps/worker but
+// pulls composeStoryFromSlide from packages/shared/carousel — without
+// touching this file the Railway watch path would miss the shared-package
+// diff and the new function would never register with Inngest Cloud.
 
 import http from 'node:http';
 import { serve } from 'inngest/node';

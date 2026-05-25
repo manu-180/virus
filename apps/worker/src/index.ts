@@ -23,6 +23,7 @@ import {
   regenerateCarouselSlide,
   handleCarouselFailure,
   publishCarouselToInstagram,
+  publishStoryToInstagram,
   refreshIgGraphTokens,
   autoPublishScheduler,
 } from './functions/orchestrator.js';
@@ -49,6 +50,7 @@ export {
   regenerateCarouselSlide,
   handleCarouselFailure,
   publishCarouselToInstagram,
+  publishStoryToInstagram,
   refreshIgGraphTokens,
   autoPublishScheduler,
   sweepStuckCarousels,
@@ -73,6 +75,7 @@ export const functions = [
   regenerateCarouselSlide,
   handleCarouselFailure,
   publishCarouselToInstagram,
+  publishStoryToInstagram,
   refreshIgGraphTokens,
   autoPublishScheduler,
   sweepStuckCarousels,

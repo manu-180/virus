@@ -512,6 +512,90 @@ export async function publishCarousel(
   return { mediaId, permalink };
 }
 
+// ── Stories publish ────────────────────────────────────────────────────
+
+export interface GraphStoryInput {
+  /** Instagram Business Account ID */
+  igUserId: string;
+  /** Long-lived page access token */
+  accessToken: string;
+  /**
+   * 9:16 image URL — publicly fetchable HTTPS. Meta accepts other aspect
+   * ratios but will letterbox/crop; the worker composes 1080x1920 to match.
+   */
+  imageUrl: string;
+}
+
+export interface GraphStoryResult {
+  /** Instagram media id of the published Story */
+  mediaId: string;
+  /**
+   * Permalink — Stories expire after 24h, so this URL will 404 once the
+   * Story rotates off. We capture it for observability anyway.
+   */
+  permalink: string | null;
+}
+
+/**
+ * Create a STORIES-typed media container. Unlike carousel children, this is
+ * NOT marked `is_carousel_item` — the container is publishable directly.
+ */
+async function createStoryContainer(
+  igUserId: string,
+  accessToken: string,
+  imageUrl: string,
+): Promise<string> {
+  const res = await graphCall<{ id: string }>(
+    'POST',
+    `/${igUserId}/media`,
+    {
+      image_url: imageUrl,
+      media_type: 'STORIES',
+      access_token: accessToken,
+    },
+  );
+  return res.id;
+}
+
+/**
+ * Publish a single image as an Instagram Story.
+ *
+ * Same 3-step flow as carousels (create → wait → publish) but the container
+ * is `media_type=STORIES` and there's only one image. Stories don't carry a
+ * caption — viewers see the image only; any in-image text has to be baked
+ * into the PNG by the story-composer.
+ *
+ * Reuses the carousel polling helpers (`waitForContainerReady`,
+ * `publishContainer`) — the container lifecycle is identical to feed media.
+ */
+export async function publishStory(
+  input: GraphStoryInput,
+): Promise<GraphStoryResult> {
+  if (!input.imageUrl) {
+    throw new InstagramGraphError({
+      code: 'invalid_payload',
+      message: 'imageUrl is required',
+      httpStatus: 400,
+      terminal: true,
+      authError: false,
+    });
+  }
+
+  const containerId = await createStoryContainer(
+    input.igUserId,
+    input.accessToken,
+    input.imageUrl,
+  );
+
+  await waitForContainerReady(containerId, input.accessToken);
+
+  const mediaId = await publishContainer(input.igUserId, input.accessToken, containerId);
+
+  const permalink = await getPermalink(mediaId, input.accessToken);
+
+  return { mediaId, permalink };
+}
+
 // ── Debug introspection (used by token-refresh job) ───────────────────
 
 export interface DebugTokenInfo {

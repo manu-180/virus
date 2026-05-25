@@ -298,6 +298,19 @@ export const publishCarouselToInstagram = inngest.createFunction(
         permalink: outcome.permalink,
         authType: account.auth_type,
       });
+
+      // Fire-and-forget: auto-share the first slide to Stories. Failure of
+      // the story flow MUST NOT affect the carousel publication outcome —
+      // hence a separate Inngest function rather than inline steps.
+      // Gated on graph_api since the Stories Graph endpoint isn't exposed
+      // through the legacy instagrapi sidecar.
+      if (account.auth_type === 'graph_api') {
+        await step.sendEvent('emit-story-publish-requested', {
+          name: 'virus/carousel.story.publish.requested',
+          data: { publicationId, carouselId, igAccountId, userId },
+        });
+      }
+
       await step.run('schedule-on-success', async () => {
         await igAutoPublishOnPublishResult(supabase, igAccountId, 'success');
       });

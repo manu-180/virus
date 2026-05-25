@@ -8,6 +8,7 @@ export * from './image-library.js';
 export * from './image-recycle.js';
 export * from './composer.js';
 export * from './composer-batch.js';
+export * from './story-composer.js';
 export * from './fonts.js';
 export * from './state.js';
 export * from './heuristics.js';

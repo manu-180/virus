@@ -100,6 +100,25 @@ export interface CarouselPublishRequestedEvent {
   };
 }
 
+/**
+ * Emitted by publish-carousel-to-instagram after a successful Graph-API
+ * publish. Triggers a separate Inngest function (publish-story-to-instagram)
+ * that auto-shares the first slide as a 9:16 Story on the same account.
+ *
+ * Decoupled so a Story-publish failure CANNOT cause an Inngest retry of the
+ * parent carousel publish (which would either be idempotent-noop or surface
+ * a spurious error). The Story is a follow-on; the carousel is the contract.
+ */
+export interface CarouselStoryPublishRequestedEvent {
+  name: 'virus/carousel.story.publish.requested';
+  data: {
+    publicationId: string;
+    carouselId: string;
+    igAccountId: string;
+    userId: string;
+  };
+}
+
 export type CarouselEvents = {
   'virus/carousel.created': CarouselCreatedEvent;
   'virus/carousel.slides.requested': CarouselSlidesRequestedEvent;
@@ -110,4 +129,5 @@ export type CarouselEvents = {
   'virus/carousel.completed': CarouselCompletedEvent;
   'virus/carousel.slide.regenerate.requested': CarouselSlideRegenerateRequestedEvent;
   'virus/carousel.publish.requested': CarouselPublishRequestedEvent;
+  'virus/carousel.story.publish.requested': CarouselStoryPublishRequestedEvent;
 };
