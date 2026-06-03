@@ -18,6 +18,12 @@ config({ path: resolve(process.cwd(), '.env.local'), override: true });
 // pulls composeStoryFromSlide from packages/shared/carousel — without
 // touching this file the Railway watch path would miss the shared-package
 // diff and the new function would never register with Inngest Cloud.
+//
+// 2026-06-02 redeploy: fix saveSlideImageAsset embed bug. embedText() was
+// throwing silently inside the outer try-catch, blocking every DB insert into
+// carousel_image_assets. Embedding now has its own try-catch so the row is
+// always inserted (embedding: null if the API is down) and the embed error
+// surfaces in logs as warn:embed_failed instead of being swallowed.
 
 import http from 'node:http';
 import { serve } from 'inngest/node';

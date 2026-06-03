@@ -379,8 +379,26 @@ export async function saveSlideImageAsset(
     }
 
     const matchText = buildAssetMatchText(slide, topic);
-    const embedding = await embedText(matchText);
     const mode = resolveImageMode(brand);
+
+    // Embedding is an optimization — failures must NOT block the insert.
+    // A row without an embedding won't be matched by match_carousel_image_assets
+    // (it filters `embedding IS NOT NULL`), but the image is still catalogued and
+    // can be backfilled later once the embedding API is healthy.
+    let embedding: number[] | null = null;
+    try {
+      embedding = await embedText(matchText);
+    } catch (embErr) {
+      console.warn(
+        JSON.stringify({
+          fn: 'saveSlideImageAsset',
+          warn: 'embed_failed',
+          carouselId,
+          role: slide.role,
+          error: embErr instanceof Error ? embErr.message : String(embErr),
+        }),
+      );
+    }
 
     const { error: insertErr } = await supabase.from('carousel_image_assets').insert({
       id: assetId,
@@ -396,7 +414,7 @@ export async function saveSlideImageAsset(
       headline: slide.headline.trim(),
       visual_prompt: slide.visualPrompt.trim(),
       match_text: matchText,
-      embedding: JSON.stringify(embedding),
+      ...(embedding !== null ? { embedding: JSON.stringify(embedding) } : {}),
       width,
       height,
       bytes,
