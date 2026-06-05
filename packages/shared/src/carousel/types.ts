@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { CarouselStyleKey } from './styles.js';
 
 // ---------------------------------------------------------------------------
 // Zod schemas for runtime validation (Claude JSON output, etc.)
@@ -46,7 +47,7 @@ export interface CarouselProject {
   status: CarouselStatus;
   brief: string;
   slide_count: number;
-  style_preset: 'bold' | 'minimal' | 'editorial';
+  style_preset: CarouselStyleKey;
   error: string | null;
   inngest_run_id: string | null;
   deleted_at: string | null;
@@ -90,7 +91,7 @@ export type CarouselBrief = {
   tone: 'direct' | 'authoritative' | 'casual' | 'contrarian';
   audience: string;
   slideCount: number;
-  stylePreset: 'minimal' | 'bold' | 'editorial';
+  stylePreset: CarouselStyleKey;
   language: 'es' | 'en';
   cta: string;
 };

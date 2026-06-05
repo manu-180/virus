@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { inngest } from '@/lib/inngest';
 import { CreateCarouselSchema } from '@/lib/validators/carousels';
 import { applyHeuristicDefaults, bumpTopicUsage } from '@/server/topics/queries';
-import { inferTopicDefaults } from '@virus/shared/carousel';
+import { inferTopicDefaults, pickRotatingStyle, bumpStyleUsage } from '@virus/shared/carousel';
 import { sweepStuckCarousels } from '@/server/carousel/watchdog';
 
 async function requireUser() {
@@ -46,6 +46,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'not_found' }, { status: 404 });
     }
 
+    // Style is rotated automatically (max spacing per project), exactly like
+    // the auto-publish scheduler — the client no longer picks a style.
+    const pickedStyle = await pickRotatingStyle(admin, input.projectId);
+
     const { data: carousel, error: insertError } = await admin
       .from('carousel_projects')
       .insert({
@@ -57,7 +61,7 @@ export async function POST(req: NextRequest) {
         // because PostgREST coerces JSON→text on insert; making this explicit
         // restores type-safety with the generated supabase types.
         brief: JSON.stringify(input.brief),
-        style_preset: input.stylePreset,
+        style_preset: pickedStyle,
         slide_count: input.brief.slideCount,
       })
       .select('id')
@@ -98,6 +102,10 @@ export async function POST(req: NextRequest) {
     } catch (bumpErr) {
       console.error('[POST /api/carousels] bumpTopicUsage/heuristic failed:', bumpErr);
     }
+
+    // Advance the STYLE rotation cursor (angle/tone are bumped inside
+    // bump_topic_usage above; style is a separate dimension). Best-effort.
+    await bumpStyleUsage(admin, input.projectId, pickedStyle);
 
     let dispatchedEventId: string | null = null;
     try {

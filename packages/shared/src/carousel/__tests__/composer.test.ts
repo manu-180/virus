@@ -1,12 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import sharp from 'sharp';
 import { composeSlide } from '../composer.js';
-import { STYLE_PRESETS, getLayoutForRole } from '../templates.js';
+import { CAROUSEL_STYLE_KEYS, type BrandVisualColors } from '../styles.js';
+import { getLayoutForRole, STYLE_PRESETS } from '../templates.js';
 import type { SlideSpec } from '../types.js';
 
-async function makeFakeBaseImage(): Promise<Buffer> {
+async function makeFakeBaseImage(
+  rgb: { r: number; g: number; b: number } = { r: 30, g: 30, b: 30 },
+): Promise<Buffer> {
   return sharp({
-    create: { width: 1080, height: 1350, channels: 3, background: { r: 30, g: 30, b: 30 } },
+    create: { width: 1080, height: 1350, channels: 3, background: rgb },
   })
     .png()
     .toBuffer();
@@ -20,30 +23,64 @@ const mockSlide: SlideSpec = {
   visualPrompt: 'A test visual',
 };
 
+// APEX-like brand colors so styles exercise the brand-palette path.
+const visualColors: BrandVisualColors = {
+  accentColor: '#6366F1',
+  secondaryAccent: '#00D4FF',
+  backgroundColor: '#050B18',
+};
+
 // ---------------------------------------------------------------------------
-// composeSlide — output dimensions and basic contracts
+// composeSlide — output dimensions and basic contracts (new registry API)
 // ---------------------------------------------------------------------------
 
 describe('composeSlide', () => {
-  it('each preset produces a 1080×1350 PNG', async () => {
+  it('every registered style produces a 1080×1350 PNG', async () => {
     const base = await makeFakeBaseImage();
 
-    for (const [name, preset] of Object.entries(STYLE_PRESETS)) {
-      const result = await composeSlide({ baseImage: base, slide: mockSlide, preset });
+    for (const styleKey of CAROUSEL_STYLE_KEYS) {
+      const result = await composeSlide({
+        baseImage: base,
+        slide: mockSlide,
+        styleKey,
+        slideCount: 8,
+        brandName: 'APEX',
+        language: 'es',
+        visualColors,
+      });
       const meta = await sharp(result).metadata();
-      expect(meta.format, `${name}: format`).toBe('png');
-      expect(meta.width, `${name}: width`).toBe(1080);
-      expect(meta.height, `${name}: height`).toBe(1350);
+      expect(meta.format, `${styleKey}: format`).toBe('png');
+      expect(meta.width, `${styleKey}: width`).toBe(1080);
+      expect(meta.height, `${styleKey}: height`).toBe(1350);
     }
-  }, 60_000);
+  }, 180_000);
+
+  it('renders every style over a LIGHT background (legibility scrims)', async () => {
+    const light = await makeFakeBaseImage({ r: 247, g: 243, b: 234 });
+    const dataSlide: SlideSpec = {
+      idx: 3,
+      role: 'data',
+      headline: 'El 90% decide en 5 segundos',
+      body: 'Velocidad y claridad antes que la estética.',
+      visualPrompt: 'x',
+    };
+    for (const styleKey of CAROUSEL_STYLE_KEYS) {
+      const result = await composeSlide({
+        baseImage: light,
+        slide: dataSlide,
+        styleKey,
+        slideCount: 8,
+        brandName: 'APEX',
+        visualColors,
+      });
+      const meta = await sharp(result).metadata();
+      expect(meta.width, `${styleKey}`).toBe(1080);
+    }
+  }, 180_000);
 
   it('composed output differs from base image (overlay was applied)', async () => {
     const base = await makeFakeBaseImage();
-    const result = await composeSlide({
-      baseImage: base,
-      slide: mockSlide,
-      preset: STYLE_PRESETS.bold,
-    });
+    const result = await composeSlide({ baseImage: base, slide: mockSlide, styleKey: 'bold', slideCount: 8 });
     expect(result).not.toEqual(base);
   }, 30_000);
 
@@ -55,33 +92,23 @@ describe('composeSlide', () => {
       headline: mockSlide.headline,
       visualPrompt: mockSlide.visualPrompt,
     };
-    const result = await composeSlide({
-      baseImage: base,
-      slide: noBodySlide,
-      preset: STYLE_PRESETS.editorial,
-    });
+    const result = await composeSlide({ baseImage: base, slide: noBodySlide, styleKey: 'editorial', slideCount: 8 });
     const meta = await sharp(result).metadata();
     expect(meta.format).toBe('png');
     expect(meta.width).toBe(1080);
     expect(meta.height).toBe(1350);
   }, 30_000);
 
-  it('data role with leading stat hides body and extracts big number', async () => {
+  it('works with no brand colors (neutral fallback palette)', async () => {
     const base = await makeFakeBaseImage();
-    const dataSlide: SlideSpec = {
-      idx: 3,
-      role: 'data',
-      headline: 'Los números no mienten',
-      body: '73% de los sitios web pierden el 50% de sus visitas.',
-      visualPrompt: 'abstract data',
-    };
-    // Verify overrides: bigNumber extracted, bodyHidden
-    const overrides = getLayoutForRole('data', STYLE_PRESETS.minimal, dataSlide.body);
-    expect(overrides.bigNumber).toBe('73%');
-    expect(overrides.bodyHidden).toBe(true);
+    const result = await composeSlide({ baseImage: base, slide: mockSlide, styleKey: 'duotone', slideCount: 8 });
+    const meta = await sharp(result).metadata();
+    expect(meta.width).toBe(1080);
+  }, 30_000);
 
-    // Composer must not throw
-    const result = await composeSlide({ baseImage: base, slide: dataSlide, preset: STYLE_PRESETS.minimal });
+  it('unknown style key falls back to a valid style instead of throwing', async () => {
+    const base = await makeFakeBaseImage();
+    const result = await composeSlide({ baseImage: base, slide: mockSlide, styleKey: 'totally-made-up', slideCount: 8 });
     const meta = await sharp(result).metadata();
     expect(meta.width).toBe(1080);
     expect(meta.height).toBe(1350);
@@ -91,7 +118,7 @@ describe('composeSlide', () => {
     const base = await makeFakeBaseImage();
     const emptySlide: SlideSpec = { ...mockSlide, headline: '' };
     await expect(
-      composeSlide({ baseImage: base, slide: emptySlide, preset: STYLE_PRESETS.bold }),
+      composeSlide({ baseImage: base, slide: emptySlide, styleKey: 'bold', slideCount: 8 }),
     ).rejects.toThrow(/compose_empty_headline/);
   });
 
@@ -99,22 +126,18 @@ describe('composeSlide', () => {
     const base = await makeFakeBaseImage();
     const wsSlide: SlideSpec = { ...mockSlide, headline: '   \t  ' };
     await expect(
-      composeSlide({ baseImage: base, slide: wsSlide, preset: STYLE_PRESETS.bold }),
+      composeSlide({ baseImage: base, slide: wsSlide, styleKey: 'bold', slideCount: 8 }),
     ).rejects.toThrow(/compose_empty_headline/);
   });
 
-  it('title longer than 60 chars is truncated with "…"', async () => {
+  it('title longer than 40 chars is truncated (composer must not throw)', async () => {
     const base = await makeFakeBaseImage();
-    const longTitle = 'A'.repeat(80);
-    const slideWithLongTitle: SlideSpec = {
-      ...mockSlide,
-      headline: longTitle,
-    };
-    // composeSlide must not throw with a long headline
+    const slideWithLongTitle: SlideSpec = { ...mockSlide, headline: 'A'.repeat(80) };
     const result = await composeSlide({
       baseImage: base,
       slide: slideWithLongTitle,
-      preset: STYLE_PRESETS.minimal,
+      styleKey: 'minimal',
+      slideCount: 8,
     });
     const meta = await sharp(result).metadata();
     expect(meta.format).toBe('png');
@@ -123,10 +146,11 @@ describe('composeSlide', () => {
 });
 
 // ---------------------------------------------------------------------------
-// getLayoutForRole — pure logic tests (no image rendering needed)
+// getLayoutForRole — pure logic, retained for the IG Stories composer that
+// still consumes the legacy templates module.
 // ---------------------------------------------------------------------------
 
-describe('getLayoutForRole', () => {
+describe('getLayoutForRole (legacy templates / stories)', () => {
   const preset = STYLE_PRESETS.minimal;
 
   it('hook role shows eyebrow and scales title up', () => {

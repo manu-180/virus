@@ -40,6 +40,7 @@
 
 import { inngest } from '../inngest/index.js';
 import { getAdminClient } from '../lib/supabase.js';
+import { pickRotatingStyle, bumpCarouselDimension } from '@virus/shared/carousel';
 
 // ---------------------------------------------------------------------------
 // Configuration constants
@@ -493,6 +494,11 @@ export const autoPublishScheduler = inngest.createFunction(
         const chosenSlideCount =
           topic.target_slide_count ?? pickSlideCount(schedule.default_slide_count);
 
+        // Rotate the overlay STYLE with maximum spacing (round-robin per
+        // project), exactly like topic/angle/tone. Replaces the old fixed
+        // `schedule.default_style_preset` so the feed never looks monotonous.
+        const pickedStyle = await pickRotatingStyle(supabase, acct.project_id);
+
         const brief = {
           topic: topic.title,
           angle: pickedAngle,
@@ -509,7 +515,7 @@ export const autoPublishScheduler = inngest.createFunction(
             user_id: schedule.user_id,
             status: 'pending',
             brief: JSON.stringify(brief),
-            style_preset: schedule.default_style_preset,
+            style_preset: pickedStyle,
             slide_count: chosenSlideCount,
             auto_publish_ig_account_id: schedule.ig_account_id,
           })
@@ -545,6 +551,16 @@ export const autoPublishScheduler = inngest.createFunction(
             error: bumpErr instanceof Error ? bumpErr.message : String(bumpErr),
           });
         }
+
+        // ── Advance rotation cursors (style + angle + tone) ───────────────
+        // The scheduler reads carousel_dimension_usage to pick the least-used
+        // value but historically never wrote it, so auto rotation never moved.
+        // Recording usage here makes style/angle/tone actually round-robin for
+        // auto-published carousels (manual carousels are bumped via
+        // bump_topic_usage in the web route). Best-effort, never gates.
+        await bumpCarouselDimension(supabase, acct.project_id, 'style', pickedStyle);
+        await bumpCarouselDimension(supabase, acct.project_id, 'angle', pickedAngle);
+        await bumpCarouselDimension(supabase, acct.project_id, 'tone', pickedTone);
 
         // ── Dispatch carousel.created ─────────────────────────────────────
         try {
@@ -599,6 +615,7 @@ export const autoPublishScheduler = inngest.createFunction(
           topicTitle: topic.title,
           pickedAngle,
           pickedTone,
+          pickedStyle,
           slideCount: chosenSlideCount,
           slideCountSource: topic.target_slide_count !== null ? 'topic_target' : 'schedule_random',
         });

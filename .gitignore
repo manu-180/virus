@@ -63,3 +63,6 @@ tmp-carousel-samples/
 
 # Claude Code internal session data
 .claude/
+
+# Superpowers brainstorm companion (visual mockups, persists across restarts)
+.superpowers/

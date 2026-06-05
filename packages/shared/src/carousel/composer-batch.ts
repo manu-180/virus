@@ -2,7 +2,7 @@ import pLimit from 'p-limit';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { composeSlide } from './composer.js';
 import type { SlideSpec } from './types.js';
-import type { StylePreset } from './templates.js';
+import type { BrandVisualColors } from './styles.js';
 
 const CONCURRENCY = 3;
 
@@ -31,7 +31,16 @@ export interface SlideToCompose {
 
 export interface ComposeAllSlidesArgs {
   slides: SlideToCompose[];
-  preset: StylePreset;
+  /** Resolved style key chosen by the rotation engine. */
+  styleKey: string;
+  /** Brand name (rendered by some styles as a mark). */
+  brandName?: string;
+  /** Language for role eyebrow labels. */
+  language?: 'es' | 'en';
+  /** Total slides in the carousel. */
+  slideCount: number;
+  /** Brand color tokens — styles render in the brand's own colors. */
+  visualColors?: BrandVisualColors;
   userId: string;
   carouselId: string;
   supabase: SupabaseClient;
@@ -47,7 +56,7 @@ export interface ComposeAllSlidesArgs {
  * Individual slide failures do NOT abort the batch — every slide is attempted.
  */
 export async function composeAllSlides(args: ComposeAllSlidesArgs): Promise<ComposeBatchResult> {
-  const { slides, preset, userId, carouselId, supabase, onSlideDone } = args;
+  const { slides, styleKey, brandName, language, slideCount, visualColors, userId, carouselId, supabase, onSlideDone } = args;
 
   const limit = pLimit(CONCURRENCY);
 
@@ -69,7 +78,11 @@ export async function composeAllSlides(args: ComposeAllSlidesArgs): Promise<Comp
           const composed = await composeSlide({
             baseImage,
             slide: slide.spec,
-            preset,
+            styleKey,
+            slideCount,
+            ...(brandName ? { brandName } : {}),
+            ...(language ? { language } : {}),
+            ...(visualColors ? { visualColors } : {}),
           });
 
           // Upload composed image

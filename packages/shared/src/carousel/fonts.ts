@@ -12,12 +12,22 @@ interface FontEntry {
   style: 'normal' | 'italic';
 }
 
-// IMPORTANT: Satori supports TTF — NOT woff2.
-// All URLs point to Google Fonts static CDN (TTF).
-// Custom fonts (Archivo Black, Playfair Display) are best-effort:
-// if a fetch fails they are skipped and Satori falls back to Inter.
+// IMPORTANT: Satori supports static TTF — NOT woff2 and NOT variable fonts
+// (a variable TTF crashes Satori's font parser). All URLs below point to
+// STATIC TTF cuts: Inter/Archivo Black from Google's gstatic CDN, the display
+// faces from the google/fonts GitHub repo (stable static instances).
+//
+// Every font drives one or more of the 13 carousel styles (see styles.ts):
+//   - Inter           → body + most sans headlines
+//   - Archivo Black   → 'bold' heavy display
+//   - DM Serif Display→ serif styles (editorial, spotlight, frame, quote, masthead) + italic kicker
+//   - Anton           → 'index' giant number
+//   - Space Mono      → 'ticket' mono labels
+//
+// All are best-effort: if a fetch fails the font is skipped and Satori falls
+// back to the nearest available family. Inter is the hard requirement.
+const GH = 'https://raw.githubusercontent.com/google/fonts/main';
 const FONT_SOURCES: FontEntry[] = [
-  // Inter — reliable fallback for all presets
   {
     name: 'Inter',
     url: 'https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfMZg.ttf',
@@ -30,17 +40,43 @@ const FONT_SOURCES: FontEntry[] = [
     weight: 700,
     style: 'normal',
   },
-  // Archivo Black — bold preset title (single weight, registered as 900)
+  // Archivo Black — single weight, registered as 900
   {
     name: 'Archivo Black',
     url: 'https://fonts.gstatic.com/s/archivoblack/v21/HTxqL289NzCGg4MzN6KJ7eW6OYuP_x7yx3A.ttf',
     weight: 900,
     style: 'normal',
   },
-  // Playfair Display Bold — editorial preset title
+  // DM Serif Display — premium Didone serif (+ real italic)
   {
-    name: 'Playfair Display',
-    url: 'https://fonts.gstatic.com/s/playfairdisplay/v37/nuFvD-vYSZviVYUb_rj3ij__anPXJzDwcbmjWBN2PKdFvXDYbtXK-F2qC0s.ttf',
+    name: 'DM Serif Display',
+    url: `${GH}/ofl/dmserifdisplay/DMSerifDisplay-Regular.ttf`,
+    weight: 400,
+    style: 'normal',
+  },
+  {
+    name: 'DM Serif Display',
+    url: `${GH}/ofl/dmserifdisplay/DMSerifDisplay-Italic.ttf`,
+    weight: 400,
+    style: 'italic',
+  },
+  // Anton — condensed poster display (single weight)
+  {
+    name: 'Anton',
+    url: `${GH}/ofl/anton/Anton-Regular.ttf`,
+    weight: 400,
+    style: 'normal',
+  },
+  // Space Mono — monospace labels
+  {
+    name: 'Space Mono',
+    url: `${GH}/ofl/spacemono/SpaceMono-Regular.ttf`,
+    weight: 400,
+    style: 'normal',
+  },
+  {
+    name: 'Space Mono',
+    url: `${GH}/ofl/spacemono/SpaceMono-Bold.ttf`,
     weight: 700,
     style: 'normal',
   },

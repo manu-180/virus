@@ -568,7 +568,11 @@ function buildVisualPromptLegacy(
   brand: ProjectBrand,
   opts: BuildVisualPromptOptions,
 ): string {
-  const moodByPreset: Record<CarouselBrief['stylePreset'], string> = {
+  // Background mood for the LEGACY image path (brands without an imageProfile).
+  // The 3 core presets keep their hand-tuned mood; every other style — and any
+  // future one — falls back to a neutral premium background so a widened style
+  // union never breaks this (and the legacy path only affects un-migrated brands).
+  const moodByPreset: Record<string, string> = {
     minimal:
       'soft cream background, subtle texture, high-key lighting, lots of negative space, no text',
     bold:
@@ -577,7 +581,9 @@ function buildVisualPromptLegacy(
       'magazine editorial photography, muted desaturated tones, film grain, no text',
   };
 
-  const presetMood = moodByPreset[stylePreset];
+  const presetMood =
+    moodByPreset[stylePreset] ??
+    'clean premium background, balanced soft lighting, brand-forward color palette, generous negative space reserved for overlay text, no text';
   const roleMood = roleMoodLayer(slideSpec.role);
   const mood = roleMood ? `${roleMood}. ${presetMood}` : presetMood;
 

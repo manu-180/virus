@@ -2,25 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { composeSlide } from '@virus/shared/carousel/composer';
-import { STYLE_PRESETS, applyBrandOverrides } from '@virus/shared/carousel/templates';
 import type { SlideSpec } from '@virus/shared/carousel/types';
-import type { StylePreset } from '@virus/shared/carousel/templates';
+import type { BrandVisualColors } from '@virus/shared/carousel/styles';
 
 const MAX_HEADLINE = 40;
 const MAX_BODY = 120;
-
-interface BrandVisualStyle {
-  textColor?: string;
-  bodyColor?: string;
-  accentColor?: string;
-  backgroundColor?: string;
-}
-
-function resolvePreset(presetName: string, visualStyle?: BrandVisualStyle): StylePreset {
-  const key = presetName as keyof typeof STYLE_PRESETS;
-  const base = STYLE_PRESETS[key] ?? STYLE_PRESETS.bold;
-  return applyBrandOverrides(base, visualStyle);
-}
 
 // PATCH /api/carousels/[id]/slides/[idx]/text
 // Body: { headline: string; body?: string }
@@ -61,7 +47,7 @@ export async function PATCH(
     // Verify ownership and load context
     const { data: project, error: projectError } = await supabase
       .from('carousel_projects')
-      .select('id, user_id, project_id, style_preset')
+      .select('id, user_id, project_id, style_preset, slide_count, brief')
       .eq('id', id)
       .eq('user_id', user.id)
       .is('deleted_at', null)
@@ -111,15 +97,24 @@ export async function PATCH(
     // visual_style is a JSONB column not reflected in generated types — cast via unknown.
     const { data: brandRow } = await admin
       .from('project_brand')
-      .select('visual_style')
+      .select('visual_style, brand_name')
       .eq('project_id', project.project_id as string)
       .eq('is_current', true)
       .single();
 
-    const visualStyle =
-      ((brandRow as unknown as { visual_style: BrandVisualStyle | null } | null)
-        ?.visual_style) ?? undefined;
-    const preset = resolvePreset(project.style_preset as string, visualStyle);
+    const brandData =
+      (brandRow as unknown as { visual_style: BrandVisualColors | null; brand_name: string | null } | null) ?? null;
+    const visualColors = brandData?.visual_style ?? undefined;
+    const brandName = brandData?.brand_name ?? '';
+
+    let language: 'es' | 'en' = 'es';
+    try {
+      const parsedBrief = JSON.parse((project.brief as string) ?? '{}') as { language?: unknown };
+      if (parsedBrief.language === 'en' || parsedBrief.language === 'es') language = parsedBrief.language;
+    } catch {
+      // default es
+    }
+    const slideCount = typeof project.slide_count === 'number' ? project.slide_count : 8;
 
     // Download base image
     const { data: imageData, error: downloadError } = await admin.storage
@@ -135,8 +130,16 @@ export async function PATCH(
 
     const baseImage = Buffer.from(await imageData.arrayBuffer());
 
-    // Compose overlay with new text
-    const composed = await composeSlide({ baseImage, slide: newSpec, preset });
+    // Compose overlay with new text (style chosen by rotation, brand colors)
+    const composed = await composeSlide({
+      baseImage,
+      slide: newSpec,
+      styleKey: project.style_preset as string,
+      slideCount,
+      language,
+      ...(brandName ? { brandName } : {}),
+      ...(visualColors ? { visualColors } : {}),
+    });
 
     // Upload composed image (upsert — same path, new content)
     const composedPath = `${user.id}/${id}/composed-${idx}.png`;

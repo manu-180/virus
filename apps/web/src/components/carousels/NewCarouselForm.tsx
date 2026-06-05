@@ -4,7 +4,6 @@ import { useEffect, useState, useTransition } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import Image from 'next/image';
 import { CarouselBriefSchema, CreateCarouselSchema } from '@/lib/validators/carousels';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -34,7 +33,6 @@ import { UsageBadge } from './UsageBadge';
 const FormSchema = CarouselBriefSchema.merge(
   z.object({
     projectId: CreateCarouselSchema.shape.projectId,
-    stylePreset: CreateCarouselSchema.shape.stylePreset,
   })
 );
 
@@ -57,12 +55,6 @@ const TONES: { value: FormData['tone']; label: string }[] = [
   { value: 'authoritative', label: 'Autoritativo' },
   { value: 'casual', label: 'Casual' },
   { value: 'contrarian', label: 'Contrarian' },
-];
-
-const PRESETS: { value: FormData['stylePreset']; label: string; description: string }[] = [
-  { value: 'minimal', label: 'Minimal', description: 'Fondo claro, tipografía limpia' },
-  { value: 'bold', label: 'Bold', description: 'Oscuro con acento fuerte' },
-  { value: 'editorial', label: 'Editorial', description: 'Cálido, estilo revista' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -110,7 +102,6 @@ export function NewCarouselForm({ projects }: Props) {
       tone: 'direct',
       audience: '',
       slideCount: 8,
-      stylePreset: 'bold',
       language: 'es',
       cta: '',
     },
@@ -118,7 +109,6 @@ export function NewCarouselForm({ projects }: Props) {
 
   const watchedProjectId = watch('projectId');
   const watchedSlideCount = watch('slideCount');
-  const watchedStylePreset = watch('stylePreset');
 
   // Pre-fill audience + CTA from project brand when project changes
   useEffect(() => {
@@ -160,7 +150,6 @@ export function NewCarouselForm({ projects }: Props) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             projectId: data.projectId,
-            stylePreset: data.stylePreset,
             // Hint para el server: si el title todavía coincide con el
             // topic seleccionado → bump al original. Si difiere → crea
             // variante con parent_topic_id apuntando a este id.
@@ -361,48 +350,15 @@ export function NewCarouselForm({ projects }: Props) {
             )}
           </div>
 
-          {/* Style preset */}
-          <div className="flex flex-col gap-2">
+          {/* Estilo — automático (rota en cada carrusel) */}
+          <div className="flex flex-col gap-1.5">
             <Label>Estilo</Label>
-            <div className="grid grid-cols-3 gap-3">
-              {PRESETS.map((preset) => {
-                const isSelected = watchedStylePreset === preset.value;
-                return (
-                  <button
-                    key={preset.value}
-                    type="button"
-                    onClick={() => setValue('stylePreset', preset.value, { shouldValidate: true })}
-                    className={[
-                      'flex flex-col rounded-xl overflow-hidden border-2 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                      isSelected
-                        ? 'border-[#C8FF57] ring-2 ring-[#C8FF57]/30'
-                        : 'border-border hover:border-foreground/30',
-                    ].join(' ')}
-                    aria-pressed={isSelected}
-                    aria-label={`Estilo ${preset.label}`}
-                  >
-                    <div className="relative w-full aspect-[5/3] overflow-hidden">
-                      <Image
-                        src={`/carousel-presets/${preset.value}.png`}
-                        alt={preset.label}
-                        fill
-                        className="object-cover"
-                        sizes="(max-width: 640px) 33vw, 160px"
-                      />
-                    </div>
-                    <div className="px-2 py-2 bg-card text-left">
-                      <p className="text-sm font-medium leading-snug">{preset.label}</p>
-                      <p className="text-xs text-muted-foreground leading-snug">
-                        {preset.description}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
+            <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-card/40 px-3 py-2.5">
+              <span className="inline-flex size-2 shrink-0 rounded-full bg-[#C8FF57]" />
+              <p className="text-sm text-muted-foreground leading-snug">
+                Automático — el diseño rota solo en cada carrusel para que tu feed no quede monótono.
+              </p>
             </div>
-            {errors.stylePreset && (
-              <p className="text-xs text-destructive">{errors.stylePreset.message}</p>
-            )}
           </div>
 
           {/* Language + CTA (side by side) */}

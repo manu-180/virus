@@ -21,13 +21,12 @@ import { getAdminClient } from '../lib/supabase.js';
 import {
   generateCarouselSlideImage,
   composeSlide,
-  STYLE_PRESETS,
-  applyBrandOverrides,
+  pickBrandStampIdxFromCount,
   buildSlidePlanPrompt,
   sanitizeSlideBody,
   SlideSpecArraySchema,
 } from '@virus/shared/carousel';
-import type { SlideSpec, CarouselBrief, StylePreset } from '@virus/shared/carousel';
+import type { SlideSpec, CarouselBrief, BrandVisualColors } from '@virus/shared/carousel';
 import type { ProjectBrand } from '@virus/shared/viral';
 import { callClaude, MODELS } from '@virus/shared/ai';
 
@@ -57,13 +56,6 @@ interface ProjectBrandRow {
   do_not_say: unknown;
   audience: unknown;
   visual_style: unknown;
-}
-
-interface BrandVisualStyle {
-  textColor?: string;
-  bodyColor?: string;
-  accentColor?: string;
-  backgroundColor?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,12 +101,6 @@ function buildBrand(projectId: string, row: ProjectBrandRow): ProjectBrand {
     caseStudies: [],
     parsedAt: new Date().toISOString(),
   };
-}
-
-function resolvePreset(presetName: string, visualStyle?: BrandVisualStyle): StylePreset {
-  const key = presetName as keyof typeof STYLE_PRESETS;
-  const base = STYLE_PRESETS[key] ?? STYLE_PRESETS.bold;
-  return applyBrandOverrides(base, visualStyle);
 }
 
 // A slide spec is "broken" if the headline is missing, empty, or whitespace-
@@ -292,17 +278,18 @@ export const regenerateCarouselSlide = inngest.createFunction(
         throw new Error(`brand_not_found:${row.project_id}`);
       }
 
-      const visualStyle = (brandRow.visual_style as BrandVisualStyle | null) ?? undefined;
+      const visualColors = (brandRow.visual_style as BrandVisualColors | null) ?? undefined;
 
       return {
         brief: parseBrief(row),
         brand: buildBrand(row.project_id, brandRow as ProjectBrandRow),
-        preset: resolvePreset(row.style_preset, visualStyle),
+        styleKey: row.style_preset,
+        visualColors,
         slideSpec: slideRowToSpec(slideRow as CarouselSlideRow),
       };
     });
 
-    const { brief, brand, preset } = loaded;
+    const { brief, brand, styleKey, visualColors } = loaded;
     let slideSpec: SlideSpec = loaded.slideSpec;
 
     // ------------------------------------------------------------------
@@ -470,7 +457,15 @@ export const regenerateCarouselSlide = inngest.createFunction(
       // means the composer's only job here is the text overlay. The
       // deterministic stamp-idx pick still happens above, but inside the
       // image-generation step, not here.
-      const composed = await composeSlide({ baseImage, slide: slideSpec, preset });
+      const composed = await composeSlide({
+        baseImage,
+        slide: slideSpec,
+        styleKey,
+        slideCount: brief.slideCount,
+        language: brief.language,
+        ...(brand.brandName ? { brandName: brand.brandName } : {}),
+        ...(visualColors ? { visualColors } : {}),
+      });
 
       const composedPath = `${userId}/${carouselId}/composed-${idx}.png`;
 

@@ -89,15 +89,14 @@ function buildBrand(projectId: string, row: ProjectBrandRow): ProjectBrand {
   };
 }
 
-function parseBrief(
-  row: CarouselProjectRow,
-  brandVisualStyle?: { defaultPreset?: string },
-): CarouselBrief {
+function parseBrief(row: CarouselProjectRow): CarouselBrief {
   const parsed = JSON.parse(row.brief) as Partial<CarouselBrief>;
-  // Use explicit stylePreset from brief first, then brand preference, then row column
+  // The carousel's style is resolved by the rotation engine at creation time
+  // and stored in row.style_preset — that's the source of truth. The brief no
+  // longer carries stylePreset, and a brand defaultPreset must NOT override the
+  // rotated choice.
   const stylePreset =
-    parsed.stylePreset ??
-    (brandVisualStyle?.defaultPreset as CarouselBrief['stylePreset'] | undefined) ??
+    (parsed.stylePreset as CarouselBrief['stylePreset'] | undefined) ??
     (row.style_preset as CarouselBrief['stylePreset']);
   return {
     topic: parsed.topic ?? '',
@@ -321,7 +320,7 @@ export const generateCarouselPlan = inngest.createFunction(
       }
 
       const brandVisualStyle = (brandRow.visual_style as { defaultPreset?: string; accentColor?: string } | null) ?? {};
-      const parsedBrief = parseBrief(row, brandVisualStyle);
+      const parsedBrief = parseBrief(row);
 
       const builtBrand = buildBrand(row.project_id, brandRow as ProjectBrandRow);
 

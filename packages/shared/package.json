@@ -18,7 +18,9 @@
     "./carousel/cost": "./src/carousel/cost.ts",
     "./carousel/types": "./src/carousel/types.ts",
     "./carousel/composer": "./src/carousel/composer.ts",
-    "./carousel/templates": "./src/carousel/templates.ts"
+    "./carousel/templates": "./src/carousel/templates.ts",
+    "./carousel/styles": "./src/carousel/styles.ts",
+    "./carousel/style-rotation": "./src/carousel/style-rotation.ts"
   },
   "scripts": {
     "test": "vitest run",

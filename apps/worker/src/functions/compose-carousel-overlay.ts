@@ -16,9 +16,8 @@
 
 import { inngest } from '../inngest/index.js';
 import { getAdminClient } from '../lib/supabase.js';
-import { composeAllSlides, STYLE_PRESETS, applyBrandOverrides } from '@virus/shared/carousel';
-import type { SlideSpec } from '@virus/shared/carousel';
-import type { StylePreset } from '@virus/shared/carousel';
+import { composeAllSlides } from '@virus/shared/carousel';
+import type { SlideSpec, BrandVisualColors } from '@virus/shared/carousel';
 
 // ---------------------------------------------------------------------------
 // DB row shapes
@@ -27,13 +26,8 @@ import type { StylePreset } from '@virus/shared/carousel';
 interface CarouselProjectRow {
   style_preset: string;
   project_id: string;
-}
-
-interface BrandVisualStyle {
-  textColor?: string;
-  bodyColor?: string;
-  accentColor?: string;
-  backgroundColor?: string;
+  brief: string;
+  slide_count: number;
 }
 
 interface CarouselSlideRow {
@@ -65,12 +59,6 @@ function slideRowToSpec(row: CarouselSlideRow): SlideSpec {
 // 'failed' with a precise error and the gallery shows the alert state.
 function specHasEmptyHeadline(spec: SlideSpec): boolean {
   return !spec.headline || spec.headline.trim().length === 0;
-}
-
-function resolvePreset(presetName: string, visualStyle?: BrandVisualStyle): StylePreset {
-  const key = presetName as keyof typeof STYLE_PRESETS;
-  const base = STYLE_PRESETS[key] ?? STYLE_PRESETS.bold;
-  return applyBrandOverrides(base, visualStyle);
 }
 
 // ---------------------------------------------------------------------------
@@ -117,12 +105,12 @@ export const composeCarouselOverlay = inngest.createFunction(
     // ------------------------------------------------------------------
     // 1. Load slides that have a base image
     // ------------------------------------------------------------------
-    const { slides, preset } = await step.run('load-slides', async () => {
+    const { slides, styleKey, visualColors, brandName, language, slideCount } = await step.run('load-slides', async () => {
       const db = getAdminClient();
 
       const { data: carouselRow, error: carouselErr } = await db
         .from('carousel_projects')
-        .select('style_preset, project_id')
+        .select('style_preset, project_id, brief, slide_count')
         .eq('id', carouselId)
         .single();
 
@@ -130,16 +118,25 @@ export const composeCarouselOverlay = inngest.createFunction(
         throw new Error(`carousel_not_found:${carouselId} — ${carouselErr?.message ?? 'no data'}`);
       }
 
-      const { style_preset, project_id } = carouselRow as CarouselProjectRow;
+      const { style_preset, project_id, brief, slide_count } = carouselRow as CarouselProjectRow;
 
       const { data: brandRow } = await db
         .from('project_brand')
-        .select('visual_style')
+        .select('visual_style, brand_name')
         .eq('project_id', project_id)
         .eq('is_current', true)
         .single();
 
-      const visualStyle = (brandRow?.visual_style as BrandVisualStyle | null) ?? undefined;
+      const visualColors = (brandRow?.visual_style as BrandVisualColors | null) ?? undefined;
+      const brandName = (brandRow?.brand_name as string | null) ?? '';
+
+      let language: 'es' | 'en' = 'es';
+      try {
+        const parsed = JSON.parse(brief) as { language?: unknown };
+        if (parsed.language === 'en' || parsed.language === 'es') language = parsed.language;
+      } catch {
+        // keep default 'es'
+      }
 
       const { data: slideRows, error: slidesErr } = await db
         .from('carousel_slides')
@@ -159,12 +156,16 @@ export const composeCarouselOverlay = inngest.createFunction(
         step: 'load-slides',
         carouselId,
         slideCount: rows.length,
-        preset: style_preset,
+        styleKey: style_preset,
       }));
 
       return {
         slides: rows,
-        preset: resolvePreset(style_preset, visualStyle),
+        styleKey: style_preset,
+        visualColors,
+        brandName,
+        language,
+        slideCount: slide_count,
       };
     });
 
@@ -220,7 +221,11 @@ export const composeCarouselOverlay = inngest.createFunction(
 
       const result = await composeAllSlides({
         slides: slidesToCompose,
-        preset,
+        styleKey,
+        slideCount,
+        language,
+        ...(brandName ? { brandName } : {}),
+        ...(visualColors ? { visualColors } : {}),
         userId,
         carouselId,
         supabase: db,
