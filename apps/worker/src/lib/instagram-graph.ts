@@ -596,6 +596,126 @@ export async function publishStory(
   return { mediaId, permalink };
 }
 
+// ── Reels publish ──────────────────────────────────────────────────────
+
+export interface GraphReelInput {
+  /** Instagram Business Account ID */
+  igUserId: string;
+  /** Long-lived page access token */
+  accessToken: string;
+  /**
+   * 9:16 vertical video URL — publicly fetchable HTTPS (a Supabase signed URL
+   * works). Meta requires MP4/MOV with H.264 video + AAC audio; the apex.stack
+   * pipeline outputs 1080x1920 @ 30fps to match the fixed Reel format.
+   */
+  videoUrl: string;
+  /** Caption text (≤2200 chars). Hashtags included. */
+  caption: string;
+  /**
+   * When true the Reel also lands in the main feed grid, not just the Reels
+   * tab. The apex.stack format wants this on. Defaults to true.
+   */
+  shareToFeed?: boolean;
+}
+
+export interface GraphReelResult {
+  /** Instagram media id of the published Reel */
+  mediaId: string;
+  /** Permalink like https://www.instagram.com/reel/CODE/ — best-effort follow-up call */
+  permalink: string | null;
+}
+
+/**
+ * Create a REELS-typed media container. Unlike image containers, this takes a
+ * `video_url` that Meta must DOWNLOAD and TRANSCODE server-side — so the
+ * container sits at IN_PROGRESS noticeably longer (seconds to a couple of
+ * minutes for a ~30s clip) before reaching FINISHED. The caller polls with a
+ * longer budget than carousels accordingly.
+ */
+async function createReelContainer(
+  igUserId: string,
+  accessToken: string,
+  videoUrl: string,
+  caption: string,
+  shareToFeed: boolean,
+): Promise<string> {
+  const res = await graphCall<{ id: string }>(
+    'POST',
+    `/${igUserId}/media`,
+    {
+      media_type: 'REELS',
+      video_url: videoUrl,
+      caption,
+      share_to_feed: shareToFeed ? 'true' : 'false',
+      access_token: accessToken,
+    },
+  );
+  return res.id;
+}
+
+/**
+ * Publish a single vertical video as an Instagram Reel.
+ *
+ * Same 3-step container lifecycle as carousels/stories (create → wait →
+ * publish) but `media_type=REELS` with a `video_url`. Because Meta transcodes
+ * the video before it can be published, processing takes longer than images —
+ * we give the poll a 5-minute budget (vs 90s for carousels) and poll every 5s.
+ *
+ * Reuses waitForContainerReady() + publishContainer() — the container lifecycle
+ * is identical to feed media; only the create call and the wait budget differ.
+ */
+export async function publishReel(
+  input: GraphReelInput,
+): Promise<GraphReelResult> {
+  if (!input.videoUrl) {
+    throw new InstagramGraphError({
+      code: 'invalid_payload',
+      message: 'videoUrl is required',
+      httpStatus: 400,
+      terminal: true,
+      authError: false,
+    });
+  }
+  if (!input.caption.trim()) {
+    throw new InstagramGraphError({
+      code: 'invalid_payload',
+      message: 'caption is required',
+      httpStatus: 400,
+      terminal: true,
+      authError: false,
+    });
+  }
+  if (input.caption.length > 2200) {
+    throw new InstagramGraphError({
+      code: 'invalid_payload',
+      message: `caption is ${input.caption.length} chars (max 2200)`,
+      httpStatus: 400,
+      terminal: true,
+      authError: false,
+    });
+  }
+
+  const containerId = await createReelContainer(
+    input.igUserId,
+    input.accessToken,
+    input.videoUrl,
+    input.caption,
+    input.shareToFeed ?? true,
+  );
+
+  // Reels transcode server-side — give Meta up to 5 minutes to reach FINISHED.
+  await waitForContainerReady(containerId, input.accessToken, {
+    maxWaitMs: 5 * 60_000,
+    pollIntervalMs: 5_000,
+  });
+
+  const mediaId = await publishContainer(input.igUserId, input.accessToken, containerId);
+
+  const permalink = await getPermalink(mediaId, input.accessToken);
+
+  return { mediaId, permalink };
+}
+
 // ── Debug introspection (used by token-refresh job) ───────────────────
 
 export interface DebugTokenInfo {
