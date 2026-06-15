@@ -89,9 +89,15 @@ export async function postProcess(opts: PostProcessOptions): Promise<PostProcess
         return;
       }
 
+      // `atempo=${speed}` scales duration by exactly 1/speed; ffmpeg's stderr
+      // "Duration:" line is the INPUT length and no other filter here changes
+      // length, so divide to get the true OUTPUT duration. (Parsing stderr
+      // verbatim overstated it by the speed factor.) Keeps the
+      // duration-anchored recorder honest in production.
+      const inputDurationSec = parseDurationSec(stderr);
       resolve({
         filePath: opts.outputPath,
-        durationSec: parseDurationSec(stderr),
+        durationSec: speed > 0 ? inputDurationSec / speed : inputDurationSec,
       });
     });
   });

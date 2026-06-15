@@ -596,6 +596,80 @@ export async function publishStory(
   return { mediaId, permalink };
 }
 
+export interface GraphVideoStoryInput {
+  /** Instagram Business Account ID */
+  igUserId: string;
+  /** Long-lived page access token */
+  accessToken: string;
+  /**
+   * 9:16 vertical video URL — publicly fetchable HTTPS (a Supabase signed URL
+   * works). MP4 with H.264 + AAC, ≤ 60s. The apex.stack pipeline reuses the same
+   * finished Reel video so the Story and the Reel are pixel-identical.
+   */
+  videoUrl: string;
+}
+
+/**
+ * Create a STORIES container from a VIDEO (`media_type=STORIES` + `video_url`).
+ * Like Reels, Meta downloads and transcodes the video server-side, so the
+ * container lingers at IN_PROGRESS before FINISHED.
+ */
+async function createVideoStoryContainer(
+  igUserId: string,
+  accessToken: string,
+  videoUrl: string,
+): Promise<string> {
+  const res = await graphCall<{ id: string }>(
+    'POST',
+    `/${igUserId}/media`,
+    {
+      media_type: 'STORIES',
+      video_url: videoUrl,
+      access_token: accessToken,
+    },
+  );
+  return res.id;
+}
+
+/**
+ * Publish a vertical VIDEO as an Instagram Story (`media_type=STORIES` +
+ * `video_url`). Stories carry no caption and expire after 24h — we capture the
+ * permalink for observability and so the same clip can be saved to a Highlight
+ * before it rotates off. Reuses the Reel-length poll budget (5 min) because Meta
+ * transcodes the video, plus waitForContainerReady() + publishContainer().
+ */
+export async function publishVideoStory(
+  input: GraphVideoStoryInput,
+): Promise<GraphStoryResult> {
+  if (!input.videoUrl) {
+    throw new InstagramGraphError({
+      code: 'invalid_payload',
+      message: 'videoUrl is required',
+      httpStatus: 400,
+      terminal: true,
+      authError: false,
+    });
+  }
+
+  const containerId = await createVideoStoryContainer(
+    input.igUserId,
+    input.accessToken,
+    input.videoUrl,
+  );
+
+  // Video Stories transcode server-side like Reels — give Meta up to 5 minutes.
+  await waitForContainerReady(containerId, input.accessToken, {
+    maxWaitMs: 5 * 60_000,
+    pollIntervalMs: 5_000,
+  });
+
+  const mediaId = await publishContainer(input.igUserId, input.accessToken, containerId);
+
+  const permalink = await getPermalink(mediaId, input.accessToken);
+
+  return { mediaId, permalink };
+}
+
 // ── Reels publish ──────────────────────────────────────────────────────
 
 export interface GraphReelInput {

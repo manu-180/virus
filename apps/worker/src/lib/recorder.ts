@@ -44,6 +44,12 @@ import { chromium, type Browser } from 'playwright';
 const FFMPEG = process.env.FFMPEG_PATH ?? 'ffmpeg';
 const FFPROBE = process.env.FFPROBE_PATH ?? 'ffprobe';
 
+// x264 preset for the intermediate scroll encode. The recorder's output is
+// re-encoded twice downstream (editor_machine trims+burns subs, then the outro
+// compose), so its intermediate quality barely matters — on a loaded machine
+// set RECORDER_X264_PRESET=ultrafast to avoid slow/CPU-starved encodes.
+const X264_PRESET = process.env['RECORDER_X264_PRESET'] ?? 'medium';
+
 // APEX standard output (formato-video-apex): vertical 1080×1920 9:16, 30fps.
 const OUT_W = 1080;
 const OUT_H = 1920;
@@ -209,7 +215,7 @@ export async function recordDemoScroll(
     '-vf', vf,
     '-r', String(fps),
     '-c:v', 'libx264',
-    '-preset', 'medium',
+    '-preset', X264_PRESET,
     '-crf', '18',
     '-pix_fmt', 'yuv420p',
     '-movflags', '+faststart',
@@ -340,7 +346,7 @@ async function depadScreenshot(
 
 // ── FFmpeg / FFprobe helpers ─────────────────────────────────────────────
 
-async function probeDimensions(file: string): Promise<{ width: number; height: number }> {
+export async function probeDimensions(file: string): Promise<{ width: number; height: number }> {
   const out = await run(FFPROBE, [
     '-v', 'error',
     '-select_streams', 'v:0',
@@ -353,8 +359,20 @@ async function probeDimensions(file: string): Promise<{ width: number; height: n
   return { width: Number(m[1]), height: Number(m[2]) };
 }
 
-async function runFfmpeg(args: string[]): Promise<void> {
+export async function runFfmpeg(args: string[]): Promise<void> {
   await run(FFMPEG, args);
+}
+
+/** Probe a media file's container duration in seconds (0 if unreadable). */
+export async function probeDurationSec(file: string): Promise<number> {
+  const out = await run(FFPROBE, [
+    '-v', 'error',
+    '-show_entries', 'format=duration',
+    '-of', 'default=nokey=1:noprint_wrappers=1',
+    file,
+  ]);
+  const d = parseFloat(out.trim());
+  return Number.isFinite(d) ? d : 0;
 }
 
 /** Spawn a binary with an argv array and resolve its stdout (rejects non-zero). */
