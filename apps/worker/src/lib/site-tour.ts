@@ -113,6 +113,155 @@ export function allocateTourDurations(
   return Array.from({ length: routeCount }, () => each);
 }
 
+// ── Pricing-route detection (generic across sites) ───────────────────────────
+
+/**
+ * Parse the same-origin <a> links of a page as {path, text} pairs (inner HTML
+ * stripped to plain text). Like parseHomeLinks but keeps the link LABEL, which
+ * is the strongest signal for finding the pricing page ("Precios", "Pricing").
+ */
+export function parseHomeAnchors(html: string, baseUrl: string): Array<{ path: string; text: string }> {
+  const baseOrigin = new URL(baseUrl).origin;
+  const out: Array<{ path: string; text: string }> = [];
+  const seen = new Set<string>();
+  for (const m of html.matchAll(/<a\s[^>]*?href\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>([\s\S]*?)<\/a>/gi)) {
+    const href = (m[1] ?? m[2] ?? '').trim();
+    if (!href || /^(#|mailto:|tel:|javascript:)/i.test(href)) continue;
+    let u: URL;
+    try {
+      u = new URL(href, baseUrl);
+    } catch {
+      continue;
+    }
+    if (u.origin !== baseOrigin) continue;
+    const path = normalisePath(u.pathname);
+    if (seen.has(path)) continue;
+    const text = (m[3] ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    seen.add(path);
+    out.push({ path, text });
+  }
+  return out;
+}
+
+/** Lowercase + strip accents so "Precios"/"precios"/"preciós" compare equal. */
+function norm(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+}
+
+// Multilingual keyword tiers for "this is the pricing/plans page". STRONG are
+// unambiguous; WEAK might be pricing (a "/servicios"·"/services" page often is),
+// so they score lower and lean on the content check to confirm.
+const PRICING_STRONG = [
+  'precios', 'precio', 'planes', 'plan', 'pricing', 'plans', 'tarifas', 'tarifa',
+  'suscrip', 'subscrip', 'membresia', 'membership', 'price',
+];
+const PRICING_WEAK = ['servicios', 'services', 'comprar', 'contratar', 'presupuesto', 'costos', 'cost'];
+
+/**
+ * Score how "pricing-like" a route is from its link text and URL slug (pure).
+ * The nav label ("Precios") is the strongest signal, the slug next. 0 = no
+ * pricing signal. Used to pick the pricing route generically across any site.
+ */
+export function scorePricingRoute(route: { path: string; text: string }): number {
+  const path = norm(route.path);
+  const text = norm(route.text);
+  let score = 0;
+  for (const kw of PRICING_STRONG) {
+    if (text.includes(kw)) score += 3;
+    if (path.includes(kw)) score += 2;
+  }
+  for (const kw of PRICING_WEAK) {
+    if (text.includes(kw)) score += 1;
+    if (path.includes(kw)) score += 1;
+  }
+  return score;
+}
+
+/**
+ * Heuristic: does this page's HTML look like a pricing page? Looks for currency
+ * amounts ($/USD/ARS/€ + digits) and per-period tokens (/mes, mensual). Confirms
+ * a keyword guess and can rescue an oddly-named pricing page. Pure.
+ */
+export function looksLikePricingContent(html: string): boolean {
+  const text = html.replace(/<[^>]+>/g, ' ').toLowerCase();
+  const currencyHits =
+    (text.match(/(?:\$|usd|ars|eur|€|us\$)\s?\d/g) || []).length +
+    (text.match(/\d\s?(?:usd|ars|eur|€)/g) || []).length;
+  const perPeriod = /\/\s?(?:mes|mo|month|ano|year|anual|mensual)|por mes|al mes/i.test(text);
+  return currencyHits >= 2 || (currencyHits >= 1 && perPeriod);
+}
+
+/**
+ * Pick the best pricing route from candidate links (pure). Ranks by keyword
+ * score; when `contentByPath` is given, a candidate whose page looks like pricing
+ * gets a strong boost (so a weak slug like "/servicios" wins if it shows prices).
+ * Returns null if nothing scores above zero.
+ */
+export function pickBestPricingRoute(
+  candidates: Array<{ path: string; text: string }>,
+  contentByPath?: Record<string, string>,
+): string | null {
+  let best: string | null = null;
+  let bestScore = 0;
+  for (const c of candidates) {
+    let s = scorePricingRoute(c);
+    if (contentByPath?.[c.path] && looksLikePricingContent(contentByPath[c.path]!)) s += 5;
+    if (s > bestScore) {
+      bestScore = s;
+      best = c.path;
+    }
+  }
+  return bestScore > 0 ? best : null;
+}
+
+/**
+ * Find a site's pricing/plans route generically: gather candidate links (home
+ * <a> text + slug, plus sitemap slugs), shortlist by keyword, confirm the top
+ * few by fetching their content (price signals), and pick the best. Returns the
+ * route PATH (e.g. "/planes", "/pricing", "/servicios") or null if none found.
+ */
+export async function findPricingRoute(
+  baseUrl: string,
+  options: { timeoutMs?: number } = {},
+): Promise<string | null> {
+  const timeoutMs = options.timeoutMs ?? 15_000;
+  const get = async (url: string): Promise<string | null> => {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), redirect: 'follow' });
+      return res.ok ? await res.text() : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const [home, sitemap] = await Promise.all([get(baseUrl), get(new URL('/sitemap.xml', baseUrl).href)]);
+  const byPath = new Map<string, { path: string; text: string }>();
+  if (home) for (const a of parseHomeAnchors(home, baseUrl)) byPath.set(a.path, a);
+  if (sitemap) {
+    for (const p of parseSitemapRoutes(sitemap, baseUrl)) {
+      if (!byPath.has(p)) byPath.set(p, { path: p, text: '' });
+    }
+  }
+  const candidates = [...byPath.values()].filter((c) => c.path !== '/');
+  if (candidates.length === 0) return null;
+
+  // Shortlist by keyword (fall back to the first few if nothing matched), then
+  // fetch each shortlisted page once to content-confirm.
+  const ranked = candidates.map((c) => ({ c, s: scorePricingRoute(c) })).sort((a, b) => b.s - a.s);
+  const pool = (ranked.some((r) => r.s > 0) ? ranked.filter((r) => r.s > 0) : ranked)
+    .slice(0, 3)
+    .map((r) => r.c);
+
+  const contentByPath: Record<string, string> = {};
+  await Promise.all(
+    pool.map(async (c) => {
+      const html = await get(new URL(c.path, baseUrl).href);
+      if (html) contentByPath[c.path] = html;
+    }),
+  );
+  return pickBestPricingRoute(pool, contentByPath);
+}
+
 export interface DiscoverRoutesOptions {
   /** Max routes to keep (default 6). */
   maxRoutes?: number;
@@ -171,6 +320,12 @@ export interface RecordSiteTourInput {
   depad?: boolean;
   /** Cap for discovered routes (ignored when `routes` is given). Default 6. */
   maxRoutes?: number;
+  /**
+   * Cap the per-route pan speed (device px/s). Keeps the scroll calm by showing
+   * the TOP portion of a tall page instead of racing the whole page into its
+   * slice. ~195 = the registered "un toque ágil" feel (spec §0.7). Default: uncapped.
+   */
+  maxSpeedPxPerSec?: number;
 }
 
 export interface RecordSiteTourResult {
@@ -211,8 +366,9 @@ export async function recordSiteTour(input: RecordSiteTourInput): Promise<Record
       outPath: input.outPath,
       durationSec: input.totalDurationSec,
       fps,
-      // omit `depad` entirely when undefined (exactOptionalPropertyTypes).
+      // omit optional keys entirely when undefined (exactOptionalPropertyTypes).
       ...(input.depad !== undefined ? { depad: input.depad } : {}),
+      ...(input.maxSpeedPxPerSec !== undefined ? { maxSpeedPxPerSec: input.maxSpeedPxPerSec } : {}),
     });
     return {
       outPath: input.outPath,
@@ -232,7 +388,7 @@ export async function recordSiteTour(input: RecordSiteTourInput): Promise<Record
     const clips: string[] = [];
     for (let i = 0; i < urls.length; i++) {
       const clip = join(workDir, `clip-${i}.mp4`);
-      await recordRouteResilient(urls[i]!, clip, durations[i]!, fps, input.depad);
+      await recordRouteResilient(urls[i]!, clip, durations[i]!, fps, input.depad, input.maxSpeedPxPerSec);
       clips.push(clip);
     }
 
@@ -256,19 +412,21 @@ async function recordRouteResilient(
   durationSec: number,
   fps: number,
   depad: boolean | undefined,
+  maxSpeedPxPerSec: number | undefined,
 ): Promise<void> {
+  const base = {
+    url,
+    outPath,
+    durationSec,
+    fps,
+    ...(maxSpeedPxPerSec !== undefined ? { maxSpeedPxPerSec } : {}),
+  };
   try {
-    await recordDemoScroll({
-      url,
-      outPath,
-      durationSec,
-      fps,
-      ...(depad !== undefined ? { depad } : {}),
-    });
+    await recordDemoScroll({ ...base, ...(depad !== undefined ? { depad } : {}) });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (depad !== false && /too short to scroll/i.test(msg)) {
-      await recordDemoScroll({ url, outPath, durationSec, fps, depad: false });
+      await recordDemoScroll({ ...base, depad: false });
       return;
     }
     throw err;

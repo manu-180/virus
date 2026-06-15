@@ -27,7 +27,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DemoRow } from '../src/lib/vidriera-selection.js';
 import { generateVoScript, generateCaption } from '../src/lib/vidriera-copy.js';
-import { recordSiteTour } from '../src/lib/site-tour.js';
+import { recordSiteTour, findPricingRoute } from '../src/lib/site-tour.js';
 import { submitEditorJob } from '../src/lib/editor-machine.js';
 import { composeWithOutro } from '../src/lib/compose.js';
 import { probeDurationSec, probeHasAudioStream } from '../src/lib/recorder.js';
@@ -42,9 +42,12 @@ const VIDEOS_BUCKET = 'videos';
 const BASE_URL = 'https://assistify.lat';
 const TAIL_SEC = 1.8;
 
-// Curated narrative tour (Explore research): landing → features → solutions hub →
-// one rubro deep-dive → pricing. Ordered = the story the Reel tells.
-const CURATED_ROUTES = ['/', '/funciones', '/soluciones', '/soluciones/yoga', '/planes'];
+// Focused tour: home + the pricing route (auto-detected generically). Two calm
+// routes beat five racing ones — Manuel's call (2026-06-15).
+const FALLBACK_PRICING_ROUTE = '/planes';
+// Calm scroll: cap the pan speed so tall pages show their TOP at ~195 px/s
+// (the registered "un toque ágil" feel, spec §0.7) instead of racing. Tunable.
+const CALM_PX_PER_SEC = Number(process.env['TOUR_MAX_PX_PER_SEC'] ?? 195);
 
 // assistify is a REAL product APEX designed + built — frame it honestly as such
 // (client-style, never the word "demo"). Rich pitch → authentic Claude VO/caption.
@@ -115,15 +118,18 @@ async function produce(): Promise<void> {
   });
   console.log(`      VO ${audio.durationSec.toFixed(1)}s → tour target ${(audio.durationSec + TAIL_SEC).toFixed(1)}s`);
 
-  console.log(`[3/6] record TOUR — ${CURATED_ROUTES.length} routes of ${BASE_URL}…`);
+  const pricingRoute = (await findPricingRoute(BASE_URL)) ?? FALLBACK_PRICING_ROUTE;
+  const routes = ['/', pricingRoute];
+  console.log(`[3/6] record TOUR — ${routes.join(' , ')} (pricing auto-detected: ${pricingRoute}) @ ${CALM_PX_PER_SEC}px/s…`);
   const tourPath = join(outDir(), 'assistify-tour.mp4');
   const tour = await recordSiteTour({
     baseUrl: BASE_URL,
-    routes: CURATED_ROUTES,
+    routes,
     outPath: tourPath,
     totalDurationSec: audio.durationSec + TAIL_SEC,
     transitionSec: 0.5,
     depad: true,
+    maxSpeedPxPerSec: CALM_PX_PER_SEC,
   });
   console.log(`      tour ${tour.durationSec.toFixed(1)}s · ${tour.routes.length} clips → ${tour.width}x${tour.height}`);
 

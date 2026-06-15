@@ -79,6 +79,13 @@ export interface RecordDemoScrollInput {
   screenshotPath?: string;
   /** Collapse large empty bands so the scroll stays content-dense. Default true. */
   depad?: boolean;
+  /**
+   * Cap the pan speed (output device px/s). When set, the clip shows the TOP
+   * portion of a tall page at a calm constant speed instead of racing the whole
+   * page into `durationSec`. Unset → traverse the whole page (pan hits the bottom
+   * at the end — the original duration-anchored behaviour).
+   */
+  maxSpeedPxPerSec?: number;
 }
 
 export interface RecordDemoScrollResult {
@@ -200,12 +207,19 @@ export async function recordDemoScroll(
     (input.speedPxPerSec ? panDistance / input.speedPxPerSec : DEFAULT_DURATION_SEC);
   const frames = Math.max(2, Math.round(durationSec * fps));
   const durFinal = frames / fps;
-  const ratePxPerSec = panDistance / durFinal; // exact: pan hits bottom at the end
+
+  // Optional speed cap: instead of always traversing the WHOLE page over durFinal
+  // (which races on tall pages), limit the panned distance so the speed never
+  // exceeds maxSpeedPxPerSec — the clip then shows the TOP portion of a tall page
+  // at a calm constant speed. Unset → effectivePan = panDistance (unchanged).
+  const cap = input.maxSpeedPxPerSec;
+  const effectivePan = cap && cap > 0 ? Math.min(panDistance, cap * durFinal) : panDistance;
+  const ratePxPerSec = effectivePan / durFinal; // constant speed over the clip
 
   // Crop a 1080×1920 window whose y grows linearly. min() clamps the final
   // sub-frame so we never read out of bounds (leave a 2px safety margin for the
   // width-normalise rounding). No division in the expression, no `/N:` form.
-  const maxOffset = Math.max(0, panDistance - 2);
+  const maxOffset = Math.max(0, effectivePan - 2);
   const cropY = `min(${ratePxPerSec.toFixed(4)}*t\\,${maxOffset})`;
   const vf =
     (needScale ? `scale=${OUT_W}:-2,` : '') +

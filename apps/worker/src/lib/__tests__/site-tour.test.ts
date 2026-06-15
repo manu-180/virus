@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
   parseSitemapRoutes,
   parseHomeLinks,
+  parseHomeAnchors,
   allocateTourDurations,
+  scorePricingRoute,
+  looksLikePricingContent,
+  pickBestPricingRoute,
 } from '../site-tour.js';
 
 describe('parseSitemapRoutes', () => {
@@ -82,5 +86,82 @@ describe('allocateTourDurations', () => {
       // equal split
       for (const p of parts) expect(p).toBeCloseTo(parts[0]!, 5);
     }
+  });
+});
+
+describe('parseHomeAnchors', () => {
+  it('returns same-origin {path,text}, tags stripped, deduped by path', () => {
+    const html = `
+      <a href="/planes">Precios y planes</a>
+      <a href="/funciones"><span>Funciones</span> nuevas</a>
+      <a href="https://twitter.com/x">Externo</a>
+      <a href="/planes">dup</a>`;
+    expect(parseHomeAnchors(html, 'https://assistify.lat')).toEqual([
+      { path: '/planes', text: 'Precios y planes' },
+      { path: '/funciones', text: 'Funciones nuevas' },
+    ]);
+  });
+
+  it('skips fragments/mailto and cross-origin', () => {
+    const html = `<a href="#x">frag</a><a href="mailto:a@b.com">mail</a><a href="https://x.com/y">ext</a>`;
+    expect(parseHomeAnchors(html, 'https://assistify.lat')).toEqual([]);
+  });
+});
+
+describe('scorePricingRoute', () => {
+  it('scores pricing-ish routes above non-pricing ones', () => {
+    const planes = scorePricingRoute({ path: '/planes', text: 'Precios' });
+    const funciones = scorePricingRoute({ path: '/funciones', text: 'Funciones' });
+    expect(planes).toBeGreaterThan(funciones);
+    expect(funciones).toBe(0);
+  });
+
+  it('matches by path slug even without link text (accent-insensitive)', () => {
+    expect(scorePricingRoute({ path: '/precios', text: '' })).toBeGreaterThan(0);
+    expect(scorePricingRoute({ path: '/pricing', text: '' })).toBeGreaterThan(0);
+    expect(scorePricingRoute({ path: '/tarifas', text: '' })).toBeGreaterThan(0);
+  });
+
+  it('a weak keyword (servicios) scores lower than a strong one (planes)', () => {
+    expect(scorePricingRoute({ path: '/servicios', text: 'Servicios' })).toBeGreaterThan(0);
+    expect(scorePricingRoute({ path: '/planes', text: 'Planes y precios' })).toBeGreaterThan(
+      scorePricingRoute({ path: '/servicios', text: 'Servicios' }),
+    );
+  });
+});
+
+describe('looksLikePricingContent', () => {
+  it('true when the page shows prices / per-period tokens', () => {
+    const html = '<h1>Planes</h1><div>USD 19/mes</div><div>USD 35/mes</div><a>Probá gratis</a>';
+    expect(looksLikePricingContent(html)).toBe(true);
+  });
+
+  it('false on a page with no price signals', () => {
+    expect(looksLikePricingContent('<h1>Nuestras funciones</h1><p>Reservas y avisos.</p>')).toBe(false);
+  });
+});
+
+describe('pickBestPricingRoute', () => {
+  const candidates = [
+    { path: '/funciones', text: 'Funciones' },
+    { path: '/planes', text: 'Precios' },
+    { path: '/soluciones', text: 'Soluciones' },
+  ];
+
+  it('picks the highest-scoring pricing route', () => {
+    expect(pickBestPricingRoute(candidates)).toBe('/planes');
+  });
+
+  it('content price-signal boosts a weak-slug candidate', () => {
+    const cands = [
+      { path: '/servicios', text: 'Servicios' },
+      { path: '/nosotros', text: 'Nosotros' },
+    ];
+    const content = { '/servicios': 'Plan Pro USD 19/mes USD 35/mes gratis' };
+    expect(pickBestPricingRoute(cands, content)).toBe('/servicios');
+  });
+
+  it('returns null when nothing looks like pricing', () => {
+    expect(pickBestPricingRoute([{ path: '/a', text: 'A' }, { path: '/b', text: 'B' }])).toBeNull();
   });
 });
