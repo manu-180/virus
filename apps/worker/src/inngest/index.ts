@@ -2,6 +2,7 @@ import { Inngest, EventSchemas } from 'inngest';
 import type { ProjectEvents } from '../events/project-events.js';
 import type { VideoEvents } from '../events/video-events.js';
 import type { CarouselEvents } from '../events/carousel-events.js';
+import type { VidrieraEvents } from '../events/vidriera-events.js';
 
 /**
  * Single Inngest client used by every function in the worker.
@@ -15,5 +16,5 @@ import type { CarouselEvents } from '../events/carousel-events.js';
  */
 export const inngest = new Inngest({
   id: 'virus-worker',
-  schemas: new EventSchemas().fromRecord<ProjectEvents & VideoEvents & CarouselEvents>(),
+  schemas: new EventSchemas().fromRecord<ProjectEvents & VideoEvents & CarouselEvents & VidrieraEvents>(),
 });

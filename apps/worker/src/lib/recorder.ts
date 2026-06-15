@@ -115,7 +115,13 @@ export async function recordDemoScroll(
   // ── 1. Capture the full page ────────────────────────────────────────────
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ headless: true, args: ['--hide-scrollbars'] });
+    browser = await chromium.launch({
+      headless: true,
+      // --no-sandbox + --disable-dev-shm-usage make headless Chromium run inside
+      // the Railway container (non-root `node` user, small /dev/shm). Both are
+      // no-ops on a normal local machine, so the spike path is unaffected.
+      args: ['--hide-scrollbars', '--no-sandbox', '--disable-dev-shm-usage'],
+    });
     const context = await browser.newContext({
       viewport: { width: VIEWPORT_CSS_W, height: VIEWPORT_CSS_H },
       deviceScaleFactor: DEVICE_SCALE,
@@ -373,6 +379,18 @@ export async function probeDurationSec(file: string): Promise<number> {
   ]);
   const d = parseFloat(out.trim());
   return Number.isFinite(d) ? d : 0;
+}
+
+/** True if the media file carries at least one audio stream (a publish fail-safe). */
+export async function probeHasAudioStream(file: string): Promise<boolean> {
+  const out = await run(FFPROBE, [
+    '-v', 'error',
+    '-select_streams', 'a',
+    '-show_entries', 'stream=index',
+    '-of', 'csv=p=0',
+    file,
+  ]);
+  return out.trim().length > 0;
 }
 
 /** Spawn a binary with an argv array and resolve its stdout (rejects non-zero). */

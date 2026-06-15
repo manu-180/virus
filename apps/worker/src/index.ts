@@ -30,6 +30,7 @@ import {
 import { detectTrends } from './functions/detect-trends.js';
 import { generateVideoProjectAware } from './functions/generate-video-project-aware.js';
 import { sweepStuckCarousels } from './functions/sweep-stuck-carousels.js';
+import { vidrieraOrchestrator } from './functions/vidriera-orchestrator.js';
 
 export {
   parseProjectFile,
@@ -54,6 +55,7 @@ export {
   refreshIgGraphTokens,
   autoPublishScheduler,
   sweepStuckCarousels,
+  vidrieraOrchestrator,
 };
 
 export const functions = [
@@ -79,4 +81,5 @@ export const functions = [
   refreshIgGraphTokens,
   autoPublishScheduler,
   sweepStuckCarousels,
+  vidrieraOrchestrator,
 ] as const;

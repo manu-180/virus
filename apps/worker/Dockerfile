@@ -51,7 +51,8 @@ FROM node:22-bookworm-slim AS runtime
 
 ENV NODE_ENV=production \
     NODE_OPTIONS=--enable-source-maps \
-    HOST=0.0.0.0
+    HOST=0.0.0.0 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # ffmpeg = audio post-processing in @virus/shared.
 # tini   = correct PID 1 / SIGTERM forwarding for graceful shutdown.
@@ -75,6 +76,17 @@ COPY --from=deps --chown=node:node /repo/tsconfig.base.json ./tsconfig.base.json
 COPY --from=deps --chown=node:node /repo/apps/worker/node_modules ./apps/worker/node_modules
 COPY --from=deps --chown=node:node /repo/packages/shared/node_modules ./packages/shared/node_modules
 COPY --from=deps --chown=node:node /repo/packages/db/node_modules ./packages/db/node_modules
+
+# Playwright Chromium for the demo recorder (apps/worker/src/lib/recorder.ts).
+# Installed to the shared PLAYWRIGHT_BROWSERS_PATH (set above) as root and BEFORE
+# the source COPYs, so the ~120MB browser layer caches across code changes
+# instead of re-downloading on every deploy. `--with-deps` pulls Chromium's OS
+# libraries via apt. Made world-readable (a+rX) so the runtime `node` user (uid
+# 1000) can exec the binary. ffmpeg was already installed above (for audio).
+RUN cd /app/apps/worker \
+    && node_modules/.bin/playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* \
+    && chmod -R a+rX /ms-playwright
 
 # Workspace source code overlaid on top of the node_modules trees (the source
 # isn't in the deps stage; it comes from the build context).
