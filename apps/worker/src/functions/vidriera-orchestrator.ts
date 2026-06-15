@@ -50,6 +50,9 @@ const VIDEOS_BUCKET = 'videos';
 // Silent tail after the narration (formato-video-apex): the scroll keeps moving
 // ~1.8s in silence; editor_machine trims the narrated part to the VO length.
 const TAIL_SEC = 1.8;
+// VO tempo: 1.0 = no post speed-up, so the narration breathes (Manuel 2026-06-15:
+// "habla muy de corrido"). The shared default is 1.15× — vidriera VOs override it.
+const VO_SPEED_MULTIPLIER = 1.0;
 // Saturday 08:00 Argentina time (spec §0.6 cadence: one web/week → one Reel/week).
 const CRON = 'TZ=America/Argentina/Buenos_Aires 0 8 * * 6';
 
@@ -164,6 +167,7 @@ export const vidrieraOrchestrator = inngest.createFunction(
           preset: VOICE_PRESETS['educational']!,
           outputDir: join(workDir, 'vo'),
           voiceId,
+          speedMultiplier: VO_SPEED_MULTIPLIER,
         });
 
         // 3c. Record the scroll, duration-anchored to VO + tail.

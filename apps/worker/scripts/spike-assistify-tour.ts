@@ -48,6 +48,8 @@ const FALLBACK_PRICING_ROUTE = '/planes';
 // Calm scroll: cap the pan speed so tall pages show their TOP at ~195 px/s
 // (the registered "un toque ágil" feel, spec §0.7) instead of racing. Tunable.
 const CALM_PX_PER_SEC = Number(process.env['TOUR_MAX_PX_PER_SEC'] ?? 195);
+// VO tempo: 1.0 = no post speed-up (calmer/paused, per Manuel). Shared default 1.15×.
+const VO_SPEED = Number(process.env['VO_SPEED'] ?? 1.0);
 
 // assistify is a REAL product APEX designed + built — frame it honestly as such
 // (client-style, never the word "demo"). Rich pitch → authentic Claude VO/caption.
@@ -115,6 +117,7 @@ async function produce(): Promise<void> {
     preset: VOICE_PRESETS['educational']!,
     outputDir: join(outDir(), 'assistify-vo'),
     voiceId,
+    speedMultiplier: VO_SPEED,
   });
   console.log(`      VO ${audio.durationSec.toFixed(1)}s → tour target ${(audio.durationSec + TAIL_SEC).toFixed(1)}s`);
 

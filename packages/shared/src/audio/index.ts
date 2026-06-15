@@ -37,7 +37,7 @@ export async function generateAudioFromScript(
   const postProcessResult = await postProcess({
     inputPath: rawMp3,
     outputPath: processedMp3,
-    speedMultiplier: POST_PROCESSING.speedMultiplier,
+    speedMultiplier: input.speedMultiplier ?? POST_PROCESSING.speedMultiplier,
     targetLufs: POST_PROCESSING.targetLufs,
     highpassHz: POST_PROCESSING.highpassHz,
   });

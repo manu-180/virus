@@ -35,6 +35,11 @@ export interface GenerateAudioInput {
   preset: import('./voice-config').VoicePreset;
   outputDir: string;
   voiceId?: string;
+  /**
+   * Override the post-process tempo. Default = POST_PROCESSING.speedMultiplier
+   * (1.15× speed-up). Lower = more paused/breathable (1.0 = no speed-up).
+   */
+  speedMultiplier?: number;
 }
 
 export interface SegmentTiming {
