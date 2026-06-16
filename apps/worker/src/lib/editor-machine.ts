@@ -58,6 +58,12 @@ export interface SubmitEditorJobInput {
   language?: string;
   /** Optional subtitle preset id (null = engine defaults + style_overrides). */
   presetId?: string | null;
+  /**
+   * Full transcript dict `{text, language, words:[{w,s,e}]}` to burn verbatim,
+   * skipping Whisper (the engine's `transcript_override` "salta todo"). Used by
+   * the 2-pass exact-subtitles flow — see submitEditorJobExactSubs.
+   */
+  transcriptOverride?: EngineTranscript;
   /** 'fast' (no Gemini analysis) or 'smart'. Default 'fast'. */
   mode?: 'fast' | 'smart';
   /** Reuse a specific job id (else a uuid is generated). */
@@ -129,6 +135,7 @@ export async function submitEditorJob(input: SubmitEditorJobInput): Promise<Subm
         preset_id: input.presetId ?? null,
         language: input.language ?? 'es',
         style_overrides: input.styleOverrides ?? KARAOKE_CYAN_STYLE,
+        ...(input.transcriptOverride ? { transcript_override: input.transcriptOverride } : {}),
       },
     })
     .select('id')
@@ -199,4 +206,88 @@ export async function submitEditorJob(input: SubmitEditorJobInput): Promise<Subm
     audioDurationS,
     tookSec: (Date.now() - t0) / 1000,
   };
+}
+
+// ── Exact subtitles (2-pass): burn the script verbatim instead of Whisper's guess ──
+
+/** A transcript word with karaoke timing, as the engine stores/consumes it. */
+export interface TranscriptWord {
+  w: string;
+  s: number;
+  e: number;
+  [k: string]: unknown;
+}
+export interface EngineTranscript {
+  text?: string;
+  language?: string;
+  words?: TranscriptWord[];
+}
+
+/** Split a VO script into spoken-word tokens (whitespace split, edge punctuation stripped). */
+export function tokenizeScript(script: string): string[] {
+  return script
+    .split(/\s+/)
+    .map((t) => t.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+    .filter((t) => t.length > 0);
+}
+
+/**
+ * Build a corrected transcript whose word TEXT is the exact script (fixing
+ * Whisper's brand/voseo typos: "Apex"→"APEX", "voz"→"vos", "API"→"app") while
+ * keeping Whisper's word TIMINGS. Safe by construction: rewrites ONLY when the
+ * script token count equals Whisper's word count (1:1 — TTS speaks exactly the
+ * script). Otherwise returns null and the caller keeps Whisper's transcript, so
+ * the karaoke is never misaligned.
+ */
+export function buildCorrectedTranscript(
+  whisper: EngineTranscript | null | undefined,
+  script: string,
+): EngineTranscript | null {
+  const words = whisper?.words ?? [];
+  const tokens = tokenizeScript(script);
+  if (words.length === 0 || tokens.length !== words.length) return null;
+  const corrected = words.map((wd, i) => ({ ...wd, w: tokens[i]! }));
+  return { text: script, language: whisper?.language ?? 'es', words: corrected };
+}
+
+/** Read the Whisper transcript the engine stored for a finished job. */
+export async function fetchJobTranscript(
+  jobId: string,
+  em: SupabaseClient = editorMachineClient(),
+): Promise<EngineTranscript | null> {
+  const { data, error } = await em.from('em_jobs').select('transcript').eq('id', jobId).single();
+  if (error || !data?.transcript) return null;
+  return data.transcript as EngineTranscript;
+}
+
+/**
+ * Like submitEditorJob, but the burned subtitles match `subtitleScript` verbatim.
+ * Two passes: pass 1 renders and yields Whisper's word timings; we rewrite the
+ * word texts to the exact script (when 1:1), then pass 2 re-renders with that
+ * transcript (`transcript_override` → the engine skips Whisper). If the texts
+ * can't be safely aligned (word counts differ), pass 1's render is kept — never
+ * a misaligned karaoke. Costs a second render (~+30s, Railway compute only;
+ * Whisper runs once).
+ */
+export async function submitEditorJobExactSubs(
+  input: SubmitEditorJobInput & { subtitleScript: string },
+): Promise<SubmitEditorJobResult> {
+  const { subtitleScript, ...base } = input;
+
+  // Pass 1 — normal render; we mainly want the transcript it produces.
+  const pass1 = await submitEditorJob(base);
+  const whisper = await fetchJobTranscript(pass1.jobId);
+  const corrected = buildCorrectedTranscript(whisper, subtitleScript);
+  if (!corrected) {
+    const sw = whisper?.words?.length ?? 0;
+    const st = tokenizeScript(subtitleScript).length;
+    // Safe fallback: word counts didn't line up 1:1 (e.g. a number/symbol the TTS
+    // expanded), so we keep Whisper's subs rather than risk a misaligned karaoke.
+    console.warn(`[exact-subs] fallback → keeping Whisper subs (script=${st} words, whisper=${sw})`);
+    return pass1; // outPath already holds the Whisper-subbed render
+  }
+
+  // Pass 2 — re-render with the exact-script transcript (skips Whisper).
+  console.log(`[exact-subs] corrected ${corrected.words?.length ?? 0} words to the exact script (2nd render)…`);
+  return submitEditorJob({ ...base, transcriptOverride: corrected });
 }

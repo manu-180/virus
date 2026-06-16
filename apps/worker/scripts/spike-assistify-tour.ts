@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import type { DemoRow } from '../src/lib/vidriera-selection.js';
 import { generateVoScript, generateCaption } from '../src/lib/vidriera-copy.js';
 import { recordSiteTour, findPricingRoute } from '../src/lib/site-tour.js';
-import { submitEditorJob } from '../src/lib/editor-machine.js';
+import { submitEditorJobExactSubs } from '../src/lib/editor-machine.js';
 import { composeWithOutro } from '../src/lib/compose.js';
 import { probeDurationSec, probeHasAudioStream } from '../src/lib/recorder.js';
 import { evaluateFailSafes } from '../src/lib/vidriera-checks.js';
@@ -138,7 +138,12 @@ async function produce(): Promise<void> {
 
   console.log('[4/6] editor_machine — trim to VO + burn karaoke-cyan subs…');
   const renderPath = join(outDir(), 'assistify-render.mp4');
-  await submitEditorJob({ videoPath: tourPath, audioPath: audio.processedMp3, outPath: renderPath });
+  await submitEditorJobExactSubs({
+    videoPath: tourPath,
+    audioPath: audio.processedMp3,
+    outPath: renderPath,
+    subtitleScript: script,
+  });
 
   console.log('[5/6] outro — APEX neon + crossfade…');
   await composeWithOutro({ inPath: renderPath, outroPath: resolveOutroPath(), outPath: FINAL_PATH });

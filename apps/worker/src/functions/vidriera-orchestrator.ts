@@ -38,7 +38,7 @@ import {
 import { generateVoScript, generateCaption } from '../lib/vidriera-copy.js';
 import { evaluateFailSafes } from '../lib/vidriera-checks.js';
 import { recordDemoScroll, probeDurationSec, probeHasAudioStream } from '../lib/recorder.js';
-import { submitEditorJob } from '../lib/editor-machine.js';
+import { submitEditorJobExactSubs } from '../lib/editor-machine.js';
 import { composeWithOutro } from '../lib/compose.js';
 import { publishReel, publishVideoStory } from '../lib/instagram-graph.js';
 import { generateAudioFromScript, VOICE_PRESETS } from '@virus/shared/audio';
@@ -53,6 +53,9 @@ const TAIL_SEC = 1.8;
 // VO tempo: 1.0 = no post speed-up, so the narration breathes (Manuel 2026-06-15:
 // "habla muy de corrido"). The shared default is 1.15× — vidriera VOs override it.
 const VO_SPEED_MULTIPLIER = 1.0;
+// Calm scroll: cap the pan speed so a tall demo page shows its TOP at a calm
+// constant speed instead of racing the whole page (same feel as the assistify tour).
+const CALM_PX_PER_SEC = 195;
 // Saturday 08:00 Argentina time (spec §0.6 cadence: one web/week → one Reel/week).
 const CRON = 'TZ=America/Argentina/Buenos_Aires 0 8 * * 6';
 
@@ -172,11 +175,21 @@ export const vidrieraOrchestrator = inngest.createFunction(
 
         // 3c. Record the scroll, duration-anchored to VO + tail.
         const scrollPath = join(workDir, 'scroll.mp4');
-        await recordDemoScroll({ url, outPath: scrollPath, durationSec: audio.durationSec + TAIL_SEC });
+        await recordDemoScroll({
+          url,
+          outPath: scrollPath,
+          durationSec: audio.durationSec + TAIL_SEC,
+          maxSpeedPxPerSec: CALM_PX_PER_SEC,
+        });
 
         // 3d. editor_machine: trim to VO + burn karaoke-cyan subtitles.
         const renderPath = join(workDir, 'render.mp4');
-        await submitEditorJob({ videoPath: scrollPath, audioPath: audio.processedMp3, outPath: renderPath });
+        await submitEditorJobExactSubs({
+          videoPath: scrollPath,
+          audioPath: audio.processedMp3,
+          outPath: renderPath,
+          subtitleScript: script,
+        });
 
         // 3e. Outro + crossfade → the final reel.
         const finalPath = join(workDir, 'final.mp4');

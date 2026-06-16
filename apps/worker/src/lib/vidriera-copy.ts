@@ -25,6 +25,7 @@ export function buildVoScriptPrompt(demo: DemoRow): string {
     `- Español rioplatense con VOSEO natural (nada de español neutro ni tono robótico).`,
     `- 25 a 32 segundos hablados (~60 a 80 palabras): mejor pocas palabras bien dichas que muchas apuradas.`,
     `- RITMO PAUSADO y respirado: frases CORTAS (máx. ~12 palabras) separadas por puntos. Usá comas y, donde quede natural, puntos suspensivos (…) para marcar pausas. Que NO suene corrido ni atropellado.`,
+    `- Números EN PALABRAS (ej. "quince días", no "15") y SIN símbolos ni abreviaturas (nada de "24/7", "$", "%": decilo hablado, "a toda hora", "siempre disponible"). Esto hace que los subtítulos coincidan exacto con la voz.`,
     `- Estructura: gancho → problema → solución → CTA de APEX.`,
     `- Enmarcá el trabajo como un producto/encargo real, con calidez. NUNCA uses la palabra "demo".`,
     `- Cerrá invitando a escribirle a APEX para crear algo a medida.`,
