@@ -73,7 +73,7 @@ function validatePayload(raw: unknown): UpdateSchedulePayload | { error: string 
   if (
     !Number.isInteger(o.min_hours_between_posts) ||
     o.min_hours_between_posts < 1 ||
-    o.min_hours_between_posts > 24
+    o.min_hours_between_posts > 72
   ) {
     return { error: 'min_hours_between_posts_out_of_range' };
   }

@@ -106,6 +106,26 @@ const LANG_LABELS: Record<ScheduleLanguage, string> = {
 
 const HOUR_CHIPS_LOCAL = Array.from({ length: 24 }, (_, i) => i);
 
+// Cadence presets — let the user pick an intensity instead of raw knobs.
+// Posting cadence is driven by posts_per_day + the cooldown: the target-hour
+// windows reopen every day, so a cooldown >24h is what stretches posting past
+// daily. 44h reliably skips one day (≈ every other day); 68h ≈ every 3 days.
+const CADENCE_PRESETS = [
+  { id: '2d', label: '2 / día', postsPerDay: 2, minHours: 4 },
+  { id: '1d', label: '1 / día', postsPerDay: 1, minHours: 20 },
+  { id: '48h', label: '1 cada 2 días', postsPerDay: 1, minHours: 44, recommended: true },
+  { id: '72h', label: '1 cada 3 días', postsPerDay: 1, minHours: 68 },
+] as const;
+
+/** Friendly approximation of the real cadence for the cooldown slider label. */
+function cadenceLabel(postsPerDay: number, minHours: number): string {
+  if (postsPerDay >= 2) return `≈ ${postsPerDay} por día`;
+  if (minHours >= 60) return '≈ cada 3 días';
+  if (minHours >= 36) return '≈ cada 2 días';
+  if (minHours >= 20) return '≈ 1 por día';
+  return `cooldown ${minHours}h`;
+}
+
 export default function AutoPublishPanel({ igAccountId, igUsername }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -331,7 +351,34 @@ export default function AutoPublishPanel({ igAccountId, igUsername }: Props) {
         </div>
       )}
 
-      {/* posts_per_day */}
+      {/* cadencia — presets que setean posts/día + cooldown juntos */}
+      <FieldRow label="Cadencia">
+        <div className="flex flex-wrap gap-1.5">
+          {CADENCE_PRESETS.map((p) => {
+            const active = postsPerDay === p.postsPerDay && minHoursBetween === p.minHours;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => {
+                  setPostsPerDay(p.postsPerDay);
+                  setMinHoursBetween(p.minHours);
+                }}
+                className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  active
+                    ? 'border-[#C8FF57]/60 bg-[#C8FF57]/15 text-[#C8FF57]'
+                    : 'border-white/10 bg-white/[0.03] text-white/55 hover:border-white/25 hover:text-white/85'
+                }`}
+              >
+                {p.label}
+                {'recommended' in p && p.recommended ? ' ★' : ''}
+              </button>
+            );
+          })}
+        </div>
+      </FieldRow>
+
+      {/* posts_per_day (control fino) */}
       <FieldRow label="Posts por día">
         <input
           type="number"
@@ -380,12 +427,12 @@ export default function AutoPublishPanel({ igAccountId, igUsername }: Props) {
         />
       </FieldRow>
 
-      {/* min_hours_between */}
-      <FieldRow label={`Mínimo entre posts: ${minHoursBetween}h`}>
+      {/* min_hours_between (cooldown) — >24h estira la cadencia a sub-diaria */}
+      <FieldRow label={`Cooldown entre posts: ${minHoursBetween}h · ${cadenceLabel(postsPerDay, minHoursBetween)}`}>
         <input
           type="range"
           min={1}
-          max={12}
+          max={72}
           step={1}
           value={minHoursBetween}
           onChange={(e) => setMinHoursBetween(Number(e.target.value))}

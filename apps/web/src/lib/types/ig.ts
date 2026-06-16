@@ -33,7 +33,7 @@ export interface IgPublicationSchedule {
   target_hours_utc: number[];
   /** Random jitter (minutes) applied around each target hour. 0..60. */
   jitter_minutes: number;
-  /** Minimum hours between posts on the same account. 1..24. */
+  /** Minimum hours between posts on the same account (cooldown). 1..72. Values >24 express sub-daily cadences (44 ≈ every other day). */
   min_hours_between_posts: number;
   /** Auth-error counter; auto-disable at 3. */
   consecutive_failures: number;
@@ -63,10 +63,12 @@ export const DEFAULT_SCHEDULE: Omit<
   'disabled_reason'
 > = {
   enabled: false,
-  posts_per_day: 2,
-  target_hours_utc: [13, 19],
-  jitter_minutes: 25,
-  min_hours_between_posts: 4,
+  // Calm cadence by default: one post every ~48h at a single evening window.
+  // posts_per_day=1 + 44h cooldown reliably skips a day; UTC 23 ≈ 20:00 AR.
+  posts_per_day: 1,
+  target_hours_utc: [23],
+  jitter_minutes: 30,
+  min_hours_between_posts: 44,
   default_angle: 'educational',
   default_tone: 'direct',
   default_slide_count: 5,
