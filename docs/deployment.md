@@ -4,10 +4,36 @@
 
 | Servicio | Plataforma | Trigger |
 |---|---|---|
-| Web (`apps/web`) | Vercel | Push a `main` |
+| **Worker (`apps/worker`) — motor de automatización** | **Railway (Docker)** | Push a `main` |
 | Base de datos | Supabase Cloud | Push a `main` (CI/CD) |
-| Worker (`apps/worker`) | Inngest Cloud | Sync manual post-deploy |
 | Renders de video | AWS Lambda (Remotion) | Push a `main` (CI/CD) |
+| Web / dashboard (`apps/web`) | Vercel | ⚠️ **AUTO-DEPLOY DESHABILITADO** — ver abajo |
+
+> El **motor real** (generación de carruseles, auto-publish a Instagram, orquestador
+> de la Vidriera) vive **entero en el worker de Railway**. Inngest se sirve solo desde
+> `apps/worker/src/server.ts` (`/api/inngest`), NO desde la web.
+
+---
+
+## ⚠️ Dashboard web (`apps/web` → proyecto Vercel `virus-web`): auto-deploy DESHABILITADO a propósito
+
+**Decisión 2026-06-15 (Manuel + Hornero). NO reactivar sin confirmar con Manuel.**
+
+- El dashboard web **no se usa**: todo se maneja por código y está automatizado. La automatización
+  corre 100% en el **worker de Railway** (Inngest, scheduler, sweep, orquestador Vidriera). Las rutas
+  `/scheduler/batch` y `/cron/sweep-stuck-carousels` en `apps/web` son **duplicados legacy** — las que
+  corren de verdad son las funciones Inngest del worker.
+- `virus-web` venía **fallando el build en Vercel hace semanas** (decenas de deploys en ERROR) **sin
+  ningún impacto** en la automatización — la prueba de que nada depende de que la web esté arriba.
+- Por eso el auto-deploy está apagado vía `git.deploymentEnabled: false` en `vercel.json`. Esto
+  **ahorra recursos** (deja de quemar builds) y **no toca Railway** (el worker deploya aparte).
+- **Reversible:** poner `git.deploymentEnabled: true` (o quitar la clave) reactiva el auto-deploy.
+- **Única salvedad:** el callback de OAuth de Instagram (`apps/web/.../ig-accounts/connect/callback`)
+  vive en la web. Solo se usa al **conectar una cuenta de IG nueva** (manual, raro). Si alguna vez hay
+  que reconectar una cuenta, reactivar el deploy un rato o mover ese callback al worker.
+
+**Antes de "arreglar" el build de `virus-web` o reactivar su deploy: pará y confirmá con Manuel.**
+No es un bug que se quedó sin atender — es una decisión deliberada de optimización de recursos.
 
 ---
 
@@ -143,14 +169,16 @@ El CI/CD lo hace automáticamente en cada push a `main` via el job `deploy-lambd
 
 ## Inngest — sincronización de funciones
 
-Después de cada deploy de la web, sincronizar las funciones de Inngest:
+El endpoint de Inngest lo sirve el **worker en Railway** (`apps/worker/src/server.ts`, ruta
+`/api/inngest`), NO la web. Después de cada deploy del worker, sincronizar:
 
 1. Ir a **Inngest Dashboard → Functions**
 2. Click en **"Sync"**
-3. Endpoint de producción: `https://virus.vercel.app/api/inngest`
+3. Endpoint de producción: `https://<dominio-del-worker-en-railway>/api/inngest`
 4. Verificar que todas las funciones aparecen como `ACTIVE`
 
-> El endpoint de Inngest se configura en `apps/web/src/app/api/inngest/route.ts`
+> El handler de Inngest se monta en `apps/worker/src/server.ts` (`serve({ client, functions })`).
+> El worker corre en Railway (`apps/worker/Dockerfile` + `apps/worker/railway.toml`).
 
 ---
 
