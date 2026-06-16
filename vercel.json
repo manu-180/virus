@@ -1,9 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm build",
+  "buildCommand": "pnpm exec turbo build --filter=@virus/web",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": "nextjs",
+  "outputDirectory": "apps/web/.next",
   "regions": ["gru1"],
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD ./apps/web ./packages",
+  "ignoreCommand": "npx turbo-ignore @virus/web",
   "git": { "deploymentEnabled": false }
 }
