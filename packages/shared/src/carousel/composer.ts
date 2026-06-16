@@ -10,6 +10,7 @@ import {
   type StyleRenderContext,
 } from './styles.js';
 import { loadFonts } from './fonts.js';
+import { getVignetteBuffer, getGrainBuffer, renderChromeOverlay } from './chrome.js';
 
 const SLIDE_WIDTH = 1080;
 const SLIDE_HEIGHT = 1350;
@@ -69,9 +70,30 @@ export async function composeSlide(args: ComposeSlideArgs): Promise<Buffer> {
     { width: SLIDE_WIDTH, height: SLIDE_HEIGHT, fonts },
   );
 
+  // Premium finishing chrome applied uniformly to every slide (see chrome.ts).
+  // Composite order bottom→top: base → vignette → style overlay → progress/
+  // swipe → grain. The two texture buffers are cached, so only the small
+  // progress overlay is rendered per slide.
+  const [vignette, grain, chrome] = await Promise.all([
+    getVignetteBuffer(),
+    getGrainBuffer(),
+    renderChromeOverlay({
+      slideNumber: slide.idx + 1,
+      slideCount,
+      palette,
+      language: language ?? 'es',
+      fonts,
+    }),
+  ]);
+
   return sharp(baseImage)
     .resize(SLIDE_WIDTH, SLIDE_HEIGHT, { fit: 'cover' })
-    .composite([{ input: Buffer.from(svgString), top: 0, left: 0 }])
+    .composite([
+      { input: vignette, top: 0, left: 0 },
+      { input: Buffer.from(svgString), top: 0, left: 0 },
+      { input: chrome, top: 0, left: 0 },
+      { input: grain, top: 0, left: 0 },
+    ])
     .png({ compressionLevel: 6 })
     .toBuffer();
 }

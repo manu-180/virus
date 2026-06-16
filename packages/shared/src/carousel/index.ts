@@ -12,6 +12,7 @@ export * from './image-batch.js';
 export * from './image-library.js';
 export * from './image-recycle.js';
 export * from './composer.js';
+export * from './chrome.js';
 export * from './composer-batch.js';
 export * from './story-composer.js';
 export * from './fonts.js';

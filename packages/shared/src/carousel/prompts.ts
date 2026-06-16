@@ -236,6 +236,7 @@ ACTO 1 — Setup (slide 0 y 1)
 ACTO 2 — Confrontación / desarrollo (slides 2 a ${lastIdx - 1})
 - Roles permitidos: "insight" | "data" | "example".
 - Cada slide entrega UN punto concreto. Nunca dos.
+- AL MENOS UNO de estos slides tiene que ser "guardable": un dato duro con número (role "data"), un mini-framework de pasos numerados, una comparación lado a lado, o un checklist (role "insight"/"example"). Tiene que funcionar como referencia que el viewer quiera GUARDAR — el save es la señal más fuerte para el algoritmo. Que sea autocontenido: se entiende sin el resto del carrusel.
 - Cada body es una idea CERRADA: una oración (o dos cortas) que se entiende sola, sin depender del slide siguiente. Profesional, directa, sin clickbait ni frases colgadas.
 - La continuidad entre slides la da el ORDEN de los conceptos (problema → causa → ejemplo → insight), no frases incompletas. Nada de "pero...", "y acá viene lo interesante...", flechas "→", ni puntos suspensivos al final.
 
@@ -395,13 +396,23 @@ ${frameworkGuide[framework]}`;
 function roleMoodLayer(role: SlideSpec['role']): string {
   switch (role) {
     case 'hook':
-      return 'cinematic opening shot, single focal subject, maximum stopping power, dramatic lighting, strong tonal contrast, magazine-cover energy';
+      return 'cinematic opening shot, single unmistakable focal subject that still reads at small grid-thumbnail size, maximum stopping power, dramatic directional lighting, strong tonal contrast, magazine-cover energy';
     case 'cta':
       return 'closing shot that mirrors the opening, calm resolved mood, single subject, brand color dominance, leaves visual room for overlay text';
     default:
       return '';
   }
 }
+
+/**
+ * Premium quality layer injected into EVERY slide's prompt (both the profile
+ * and legacy paths). Encodes the 2026 premium-carousel research: editorial
+ * lighting, tonal depth, fine grain, restrained palette, and — critically —
+ * reserved negative space (especially the lower third, where the text overlay
+ * lands) so the composited headline never fights a busy background.
+ */
+const PREMIUM_QUALITY_LAYER =
+  'editorial photography quality, soft directional key light, rich tonal depth, fine natural film grain, restrained premium color palette, crisp focal subject with clean separation from the background, generous uncluttered negative space — especially the lower third — reserved for text overlays, magazine-grade finish';
 
 export interface BuildVisualPromptOptions {
   /**
@@ -546,6 +557,7 @@ function buildVisualPromptFromProfile(
     `Technique: ${profile.technique}.`,
     `Composition: ${profile.composition}.`,
     `Mood: ${moodLine}.`,
+    PREMIUM_QUALITY_LAYER + '.',
     paletteLine + `Brand: ${brand.brandName}.`,
     brandTypographyDirective,
     'Aspect ratio 4:5 (1080x1350px).',
@@ -615,5 +627,5 @@ function buildVisualPromptLegacy(
     ? 'Negative: no extra text beyond the brand name, no logos, no watermarks, no close-up human faces unless explicitly described, no clutter.'
     : 'Negative: no text, no letters, no words, no logos, no watermarks, no close-up human faces unless explicitly described, no clutter.';
 
-  return `${referenceDirective}${anchor}${slideSpec.visualPrompt}. Visual style: ${mood}. Brand: ${brand.brandName}${brandSection}.${brandTypographyDirective} Maintain visual consistency across the carousel — same color palette, lighting direction, and mood. Aspect ratio 4:5 (1080x1350px). ${negative}`;
+  return `${referenceDirective}${anchor}${slideSpec.visualPrompt}. Visual style: ${mood}. ${PREMIUM_QUALITY_LAYER}. Brand: ${brand.brandName}${brandSection}.${brandTypographyDirective} Maintain visual consistency across the carousel — same color palette, lighting direction, and mood. Aspect ratio 4:5 (1080x1350px). ${negative}`;
 }

@@ -12,7 +12,6 @@ import { buildSlidePlanPrompt, buildVisualPrompt, buildCaptionPrompt, buildCapti
 import { composeSlide } from '../composer.js';
 import { inferLastOkStep } from '../state.js';
 import { estimateCarouselCost } from '../cost.js';
-import { STYLE_PRESETS } from '../templates.js';
 import type { CarouselBrief, SlideSpec } from '../types.js';
 import type { ProjectBrand } from '../../viral/types.js';
 
@@ -273,7 +272,8 @@ describe('composeSlide — pipeline end-to-end con imagen sintética', () => {
       const result = await composeSlide({
         baseImage: base,
         slide,
-        preset: STYLE_PRESETS.minimal,
+        styleKey: 'minimal',
+        slideCount: 8,
       });
       const meta = await sharp(result).metadata();
       expect(meta.format, `slide ${slide.idx}: formato`).toBe('png');
@@ -288,7 +288,8 @@ describe('composeSlide — pipeline end-to-end con imagen sintética', () => {
     const result = await composeSlide({
       baseImage: base,
       slide: mockSlides[0]!,
-      preset: STYLE_PRESETS.bold,
+      styleKey: 'bold',
+      slideCount: 8,
     });
     expect(result).not.toEqual(base);
   }, 30_000);
@@ -296,8 +297,8 @@ describe('composeSlide — pipeline end-to-end con imagen sintética', () => {
   it('preset bold produce output diferente a minimal para el mismo slide', async () => {
     const base = await makeFakeBaseImage();
     const [minimal, bold] = await Promise.all([
-      composeSlide({ baseImage: base, slide: mockSlides[0]!, preset: STYLE_PRESETS.minimal }),
-      composeSlide({ baseImage: base, slide: mockSlides[0]!, preset: STYLE_PRESETS.bold }),
+      composeSlide({ baseImage: base, slide: mockSlides[0]!, styleKey: 'minimal', slideCount: 8 }),
+      composeSlide({ baseImage: base, slide: mockSlides[0]!, styleKey: 'bold', slideCount: 8 }),
     ]);
     expect(minimal).not.toEqual(bold);
   }, 30_000);
@@ -305,7 +306,7 @@ describe('composeSlide — pipeline end-to-end con imagen sintética', () => {
   it('slide de CTA (idx=2) compone correctamente', async () => {
     const base = await makeFakeBaseImage();
     const ctaSlide = mockSlides[2]!;
-    const result = await composeSlide({ baseImage: base, slide: ctaSlide, preset: STYLE_PRESETS.editorial });
+    const result = await composeSlide({ baseImage: base, slide: ctaSlide, styleKey: 'editorial', slideCount: 8 });
     const meta = await sharp(result).metadata();
     expect(meta.format).toBe('png');
     expect(meta.width).toBe(1080);
