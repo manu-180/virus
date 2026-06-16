@@ -69,3 +69,8 @@ tmp-recordings/
 
 # Superpowers brainstorm companion (visual mockups, persists across restarts)
 .superpowers/
+
+# graphify knowledge-graph output (scratch, regenerable)
+graphify-out/
+# carousel style gallery spike tooling (machine-specific abs paths, writes to .superpowers/)
+packages/shared/scripts/_gallery-*.mjs
