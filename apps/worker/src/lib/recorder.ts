@@ -12,10 +12,21 @@
  *   2. Page loads at 540 CSS px mobile viewport; initial animations settle (1.5s).
  *   3. A rAF + performance.now loop scrolls top → target over the scroll window.
  *   4. Brief hold at the bottom; page/context close → WebM finalised on disk.
- *   5. FFmpeg scales 540×960 WebM → 1080×1920 H.264 mp4 (APEX standard format).
+ *   5. FFmpeg TRIMS the blank load lead-in (see below) and scales the 540×960 WebM
+ *      → 1080×1920 H.264 mp4 (APEX standard format).
  *
  * `maxSpeedPxPerSec` caps the scroll speed (device px/s) exactly as before:
  * tall pages show the top portion at a calm speed instead of racing in `durationSec`.
+ *
+ * TWO ROBUSTNESS FIXES (2026-06-17, Manuel reported white opening + no-scroll):
+ *   • White first frame — Playwright records from page creation, so the WebM
+ *     opens with `about:blank` + the whole load (goto/networkidle/fonts) IN WHITE.
+ *     We measure that lead-in (record-start → content-ready) and FFmpeg-trim it off
+ *     the front, so the clip opens on the SETTLED hero, never on a blank screen.
+ *   • Page that "barely scrolls" — `document.body.scrollHeight` under-reports on
+ *     app-shell sites (Next.js with a nested overflow container, or scroll on
+ *     <html>). We now take the max of body/documentElement metrics AND detect the
+ *     tallest in-page overflow container, then scroll WHICHEVER actually moves.
  */
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir } from 'node:fs/promises';
@@ -109,6 +120,8 @@ export async function recordDemoScroll(
   let browser: Browser | null = null;
   let pageBodyHeightCss = 0;
   let targetScrollCssPx = 0;
+  // Blank load lead-in (s) to trim off the front of the WebM (white-frame fix).
+  let leadInSec = 0;
 
   try {
     browser = await chromium.launch({
@@ -136,46 +149,73 @@ export async function recordDemoScroll(
     });
 
     const page = await context.newPage();
+    // Playwright starts recording at page creation: everything from here until
+    // content is painted is the blank lead-in we trim off the front (bug #1).
+    const recordStartMs = Date.now();
 
     await page.goto(input.url, { waitUntil: 'load', timeout: 60_000 });
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
 
-    // Wait for web fonts and hero animations to settle before scrolling.
+    // Wait for web fonts so the first KEPT frame is fully painted (no FOUT).
     await page.evaluate(() => (document as Document & { fonts?: FontFaceSet }).fonts?.ready);
+    // Everything before this instant is the blank/loading lead-in. Trimming up to
+    // here keeps the full SETTLE hold below as the clip's opening (settled hero).
+    leadInSec = Math.max(0, (Date.now() - recordStartMs) / 1000);
+
+    // Hold on the settled hero before scrolling (this becomes the opening shot).
     await page.waitForTimeout(SETTLE_BEFORE_SEC * 1000);
 
-    // Read page dimensions (CSS px).
-    const dims = await page.evaluate(() => ({
-      bodyHeight: document.body.scrollHeight,
-      maxScroll: Math.max(0, document.body.scrollHeight - window.innerHeight),
-    }));
-    pageBodyHeightCss = dims.bodyHeight;
-
-    // Cap scroll distance so tall pages don't race through in `durationSec`.
-    const maxScrollCssPxTotal = maxSpeedCssPx * scrollWindowSec;
-    targetScrollCssPx = Math.min(dims.maxScroll, maxScrollCssPxTotal);
-
-    if (targetScrollCssPx > 0) {
-      // Linear scroll anchored to real clock (performance.now), driven by rAF.
-      await page.evaluate(
-        async ({ targetPx, durationMs }: { targetPx: number; durationMs: number }) => {
+    // Measure how far we can scroll AND on which scroller, then scroll it — all in
+    // one page-world pass. Robust to app-shell layouts where the document doesn't
+    // scroll (Next.js nested overflow container, or scroll on <html>): we take the
+    // max of body/documentElement metrics and detect the tallest overflow:auto/scroll
+    // descendant, then drive whichever actually moves (bug #2 — "barely scrolled").
+    const scroll = await page.evaluate(
+      async ({ maxSpeedCssPx: capPxPerSec, scrollWindowMs }: { maxSpeedCssPx: number; scrollWindowMs: number }) => {
+        const de = document.documentElement;
+        const body = document.body;
+        const viewport = window.innerHeight || de.clientHeight || 0;
+        const docHeight = Math.max(
+          body ? body.scrollHeight : 0, de ? de.scrollHeight : 0,
+          body ? body.offsetHeight : 0, de ? de.offsetHeight : 0,
+        );
+        let bestEl: Element | null = null;
+        let bestMax = Math.max(0, docHeight - viewport); // document scroll capacity
+        // App-shell: the real scroll often lives in a nested overflow container.
+        const all = document.querySelectorAll('body *');
+        for (let i = 0; i < all.length; i++) {
+          const el = all[i] as Element;
+          const cs = getComputedStyle(el);
+          if (cs.overflowY !== 'auto' && cs.overflowY !== 'scroll') continue;
+          const max = el.scrollHeight - el.clientHeight;
+          if (max > bestMax + 40) { bestMax = max; bestEl = el; }
+        }
+        // Cap the distance so tall pages stay calm (show the top, not a race).
+        const cap = capPxPerSec * (scrollWindowMs / 1000);
+        const targetPx = Math.min(bestMax, cap);
+        const setY = bestEl
+          ? (y: number) => { (bestEl as Element).scrollTop = y; }
+          : (y: number) => { window.scrollTo(0, y); };
+        if (targetPx > 0) {
           const start = performance.now();
           await new Promise<void>((resolve) => {
             const tick = () => {
-              const t = Math.min((performance.now() - start) / durationMs, 1);
-              window.scrollTo(0, Math.round(targetPx * t));
+              const t = Math.min((performance.now() - start) / scrollWindowMs, 1);
+              setY(Math.round(targetPx * t));
               if (t < 1) requestAnimationFrame(tick);
               else resolve();
             };
             requestAnimationFrame(tick);
           });
-        },
-        { targetPx: targetScrollCssPx, durationMs: scrollWindowSec * 1000 },
-      );
-    } else {
-      // Page fits in viewport — hold at top for the scroll window.
-      await page.waitForTimeout(scrollWindowSec * 1000);
-    }
+        } else {
+          await new Promise<void>((r) => setTimeout(r, scrollWindowMs));
+        }
+        return { targetPx, docHeight, usedContainer: !!bestEl, scrollableMax: bestMax };
+      },
+      { maxSpeedCssPx, scrollWindowMs: scrollWindowSec * 1000 },
+    );
+    pageBodyHeightCss = scroll.docHeight;
+    targetScrollCssPx = scroll.targetPx;
 
     // Brief hold at the bottom.
     await page.waitForTimeout(PAUSE_BOTTOM_SEC * 1000);
@@ -187,10 +227,12 @@ export async function recordDemoScroll(
     // Close context → WebM is guaranteed written to disk.
     await context.close();
 
-    // Scale 540×960 WebM → 1080×1920 H.264 mp4 (APEX standard).
+    // Trim the blank load lead-in (`-ss` after `-i` = frame-accurate, we re-encode
+    // anyway) so the clip OPENS on the settled hero, then scale to APEX format.
     await runFfmpeg([
       '-y',
       '-i', rawVideoPath,
+      '-ss', leadInSec.toFixed(3),
       '-vf', `scale=${OUT_W}:${OUT_H},format=yuv420p`,
       '-r', String(fps),
       '-c:v', 'libx264',
