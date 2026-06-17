@@ -14,6 +14,21 @@ export interface VidrieraRunRequestedEvent {
   };
 }
 
+export interface VidreiraLinkedinPublishRequestedEvent {
+  name: 'vidriera/linkedin.publish.requested';
+  data: {
+    demoId:         string;
+    demoSlug:       string;
+    /** Path en el bucket `videos` de VHIRUS. El publisher lo borra tras subir a LinkedIn. */
+    storagePath:    string;
+    caption:        string;
+    title:          string;
+    liAccountId:    string;
+    reelPermalink:  string | null;
+  };
+}
+
 export type VidrieraEvents = {
-  'vidriera/run.requested': VidrieraRunRequestedEvent;
+  'vidriera/run.requested':           VidrieraRunRequestedEvent;
+  'vidriera/linkedin.publish.requested': VidreiraLinkedinPublishRequestedEvent;
 };

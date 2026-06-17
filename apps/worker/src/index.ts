@@ -31,6 +31,7 @@ import { detectTrends } from './functions/detect-trends.js';
 import { generateVideoProjectAware } from './functions/generate-video-project-aware.js';
 import { sweepStuckCarousels } from './functions/sweep-stuck-carousels.js';
 import { vidrieraOrchestrator } from './functions/vidriera-orchestrator.js';
+import { publishToLinkedIn } from './functions/publish-to-linkedin.js';
 
 export {
   parseProjectFile,
@@ -56,6 +57,7 @@ export {
   autoPublishScheduler,
   sweepStuckCarousels,
   vidrieraOrchestrator,
+  publishToLinkedIn,
 };
 
 export const functions = [
@@ -82,4 +84,5 @@ export const functions = [
   autoPublishScheduler,
   sweepStuckCarousels,
   vidrieraOrchestrator,
+  publishToLinkedIn,
 ] as const;

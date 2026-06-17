@@ -46,6 +46,9 @@ import { captureWorkerException } from '../utils/sentry.js';
 
 // @apex.stack — the APEX portfolio IG account (ig_accounts row, graph_api).
 const IG_ACCOUNT_ID = '52c60dd6-23e9-4131-aa3f-47adef5c44b3';
+// LinkedIn account para publicar el mismo video. Set via env var una vez conectada la cuenta.
+// Si no está configurado, el paso de LinkedIn se saltea silenciosamente.
+const LI_ACCOUNT_ID = process.env['VIDRIERA_LI_ACCOUNT_ID'] ?? null;
 const VIDEOS_BUCKET = 'videos';
 // Silent tail after the narration (formato-video-apex): the scroll keeps moving
 // ~1.8s in silence; editor_machine trims the narrated part to the VO length.
@@ -275,7 +278,36 @@ export const vidrieraOrchestrator = inngest.createFunction(
             (story ? ` + Story ${story.permalink ?? story.mediaId}.` : ' (la Story falló; se publicó solo el Reel).'),
         });
 
-        // 3m. Best-effort cleanup (Meta keeps its own copy).
+        // 3m. LinkedIn: si hay cuenta configurada, subir el mismo video en background.
+        //     Guardamos el video en una ruta separada para que el publisher LI
+        //     lo pueda descargar de forma independiente (puede tardar minutos).
+        //     El publisher LI es responsable de borrar `liObjectPath` cuando termina.
+        if (LI_ACCOUNT_ID) {
+          const liObjectPath = `vidriera-li/${safeSlug}-${Date.now()}.mp4`;
+          const liUp = await vh.storage
+            .from(VIDEOS_BUCKET)
+            .upload(liObjectPath, finalBytes, { contentType: 'video/mp4', upsert: true });
+          if (!liUp.error) {
+            await inngest.send({
+              name: 'vidriera/linkedin.publish.requested',
+              data: {
+                demoId:        demo.id,
+                demoSlug:      demo.slug,
+                storagePath:   liObjectPath,
+                caption,
+                title:         demo.titulo,
+                liAccountId:   LI_ACCOUNT_ID,
+                reelPermalink: reel.permalink,
+              },
+            }).catch((err: unknown) => {
+              logger.warn('vidriera.linkedin_event_failed', { error: String(err) });
+            });
+          } else {
+            logger.warn('vidriera.linkedin_upload_failed', { error: liUp.error.message });
+          }
+        }
+
+        // 3n. Best-effort cleanup del video de IG (Meta mantiene su copia).
         await vh.storage.from(VIDEOS_BUCKET).remove([objectPath]).catch(() => {});
 
         logger.info('vidriera.published', { demo: demo.slug, reel: reel.permalink, story: story?.permalink ?? null });
