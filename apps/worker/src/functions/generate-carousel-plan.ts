@@ -86,6 +86,15 @@ function buildBrand(projectId: string, row: ProjectBrandRow): ProjectBrand {
     features: [],
     caseStudies: [],
     parsedAt: new Date().toISOString(),
+    // Carry the brand's visual identity (imageProfile: mode/technique/
+    // subjectStrategy/negativeVisuals/subjectLibrary) into the runtime brand.
+    // Without this, brand.visualStyle is undefined → shouldUseImageProfile()
+    // is false → the slide planner AND image generator fall back to the legacy
+    // "character-anchor photo of a person at a desk" flow, ignoring the brand's
+    // configured look (e.g. APEX's illustration-3d, no-humans world-anchor).
+    ...(row.visual_style
+      ? { visualStyle: row.visual_style as NonNullable<ProjectBrand['visualStyle']> }
+      : {}),
   };
 }
 

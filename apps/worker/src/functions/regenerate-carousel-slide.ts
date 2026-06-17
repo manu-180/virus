@@ -100,6 +100,13 @@ function buildBrand(projectId: string, row: ProjectBrandRow): ProjectBrand {
     features: [],
     caseStudies: [],
     parsedAt: new Date().toISOString(),
+    // Carry the brand's visual identity so regeneration honors imageProfile.
+    // Without this, brand.visualStyle is undefined → subjectStrategy below
+    // always defaults to 'character-anchor' (legacy person-at-desk photo),
+    // ignoring the brand's configured look (e.g. APEX's world-anchor 3D).
+    ...(row.visual_style
+      ? { visualStyle: row.visual_style as NonNullable<ProjectBrand['visualStyle']> }
+      : {}),
   };
 }
 
