@@ -1,53 +1,31 @@
 /// <reference lib="dom" />
 /**
- * El Grabador — Playwright + FFmpeg demo-scroll recorder (Vidriera-Video C2)
+ * El Grabador v2 — Playwright LIVE VIDEO recorder (Vidriera-Video C2)
  *
- * Produces the *raw* scroll clip for an APEX promo Reel: a smooth, constant-speed
- * vertical pan down a landing page, in the mandatory APEX format (1080×1920, 9:16,
- * H.264, 30fps). This is the recorder for Tarea 1 (one page); the multi-route
- * generalisation is Tarea 2 (see libre_albedrio/tools/vidriera-video.md §7).
+ * Replaced the screenshot+FFmpeg-pan approach with real browser video capture.
+ * Playwright records the browser rendering live while JS scrolls the page smoothly,
+ * so scroll-reveal animations, CSS transitions, and Intersection Observer effects
+ * fire naturally — producing a genuine video instead of a panned static image.
  *
- * Technique (per the `formato-video-apex` memory — "la vez de Nebula"):
- *   1. Playwright renders the page at a mobile viewport (~540 CSS px) with
- *      deviceScaleFactor 2 → a crisp 1080-wide full-page screenshot.
- *   2. FFmpeg crops a 1080×1920 window and pans its y-offset linearly over the
- *      whole clip, reaching the bottom only on the final frame. The pan never
- *      freezes — the silent ~1.8s tail is just the last stretch of the same
- *      constant-speed motion (formato-video-apex §2: "NO congelar").
+ * Technique:
+ *   1. Browser context opens with `recordVideo` enabled (Playwright WebM capture).
+ *   2. Page loads at 540 CSS px mobile viewport; initial animations settle (1.5s).
+ *   3. A rAF + performance.now loop scrolls top → target over the scroll window.
+ *   4. Brief hold at the bottom; page/context close → WebM finalised on disk.
+ *   5. FFmpeg scales 540×960 WebM → 1080×1920 H.264 mp4 (APEX standard format).
  *
- * A static screenshot + math pan (rather than Playwright's native video capture)
- * is deliberate: it gives perfectly constant speed, exact format output, and a
- * trivially controllable tail — the motion in the final Reel comes from the pan,
- * not from in-page animation.
- *
- * The clip is duration-anchored: it traverses the WHOLE page over `durationSec`,
- * reaching the bottom on the last frame. The production path passes
- * `durationSec = voiceOverSeconds + TAIL` (a bit LONGER than the audio): the
- * editor_machine engine (pipeline step 5) syncs the narrated stretch to the
- * voice-over and the surplus becomes the silent ~1.8s tail. Because the page is
- * always traversed in ~the narration time, a taller page simply scrolls faster —
- * the format constant is "whole page, in VO time", not a fixed px/s.
- *
- * `speedPxPerSec` is an optional override for a fixed constant speed (duration
- * then falls out of the page height); without either knob a sane reel-length
- * default is used.
- *
- * FFmpeg is invoked with an argv array (no shell), so the crop expression needs
- * no escaping; we also avoid the `(W-w)/2:` form the engine sandbox mis-reads as
- * a path (formato-video-apex gotcha #2).
+ * `maxSpeedPxPerSec` caps the scroll speed (device px/s) exactly as before:
+ * tall pages show the top portion at a calm speed instead of racing in `durationSec`.
  */
 import { spawn } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { mkdtemp, mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { chromium, type Browser } from 'playwright';
 
 const FFMPEG = process.env.FFMPEG_PATH ?? 'ffmpeg';
 const FFPROBE = process.env.FFPROBE_PATH ?? 'ffprobe';
 
-// x264 preset for the intermediate scroll encode. The recorder's output is
-// re-encoded twice downstream (editor_machine trims+burns subs, then the outro
-// compose), so its intermediate quality barely matters — on a loaded machine
-// set RECORDER_X264_PRESET=ultrafast to avoid slow/CPU-starved encodes.
 const X264_PRESET = process.env['RECORDER_X264_PRESET'] ?? 'medium';
 
 // APEX standard output (formato-video-apex): vertical 1080×1920 9:16, 30fps.
@@ -55,316 +33,195 @@ const OUT_W = 1080;
 const OUT_H = 1920;
 const DEFAULT_FPS = 30;
 
-// Mobile capture: 540 CSS px wide × dsf 2 = 1080 device px (the output width).
+// Mobile viewport: 540 CSS px × dpr 2 = 1080 device px (crisp retina rendering).
 const VIEWPORT_CSS_W = 540;
 const VIEWPORT_CSS_H = 960;
 const DEVICE_SCALE = 2;
 
-// Reel-length default when no duration/speed is given: ≈ a 30s voice-over + a
-// ~2s tail. The production path passes `durationSec = voiceOverSeconds + TAIL`.
+// Default clip duration when no `durationSec` given (≈ 30s VO + ~2s tail).
 const DEFAULT_DURATION_SEC = 32;
+
+// Settle time before scrolling: hero animations + font renders complete.
+const SETTLE_BEFORE_SEC = 1.5;
+// Brief hold at the bottom after the scroll completes.
+const PAUSE_BOTTOM_SEC = 0.5;
+
+// Default calm scroll cap — 195 device px/s → 97.5 CSS px/s.
+const DEFAULT_MAX_SPEED_DEVICE_PX = 195;
 
 export interface RecordDemoScrollInput {
   /** Demo URL to record (live Vercel URL or any reachable https page). */
   url: string;
   /** Absolute path for the final .mp4. */
   outPath: string;
-  /** Total clip duration (s) — the whole page is traversed over this. Primary knob. */
+  /** Total clip duration (s). The scroll is anchored to this window. Primary knob. */
   durationSec?: number;
-  /** Fixed pan speed in output device px/s (overrides the default; ignored if `durationSec` set). */
+  /** Unused in live-video mode (duration drives scroll speed). Kept for compat. */
   speedPxPerSec?: number;
   /** Output frame rate. Default 30 (APEX standard). */
   fps?: number;
-  /** Where to keep the intermediate full-page PNG. Default: alongside outPath. */
+  /** Unused in live-video mode. Kept for interface compat. */
   screenshotPath?: string;
-  /** Collapse large empty bands so the scroll stays content-dense. Default true. */
+  /** Unused in live-video mode. Kept for interface compat. */
   depad?: boolean;
   /**
-   * Cap the pan speed (output device px/s). When set, the clip shows the TOP
-   * portion of a tall page at a calm constant speed instead of racing the whole
-   * page into `durationSec`. Unset → traverse the whole page (pan hits the bottom
-   * at the end — the original duration-anchored behaviour).
+   * Cap the scroll speed (device px/s). Tall pages show the top portion at a
+   * calm constant speed instead of racing the whole page in `durationSec`.
+   * Same semantics as the old pan-speed cap. Default: 195 device px/s.
    */
   maxSpeedPxPerSec?: number;
 }
 
 export interface RecordDemoScrollResult {
   outPath: string;
-  /** Final clip duration in seconds. */
+  /** Final clip duration in seconds (as probed by ffprobe). */
   durationSec: number;
   width: number;
   height: number;
   fps: number;
-  /** Height of the captured page in output device px (after any width-normalise). */
+  /** Page body height in output device px. */
   pageHeightPx: number;
-  /** Effective constant pan speed in device px/s. */
+  /** Effective scroll speed in device px/s. */
   panSpeedPxPerSec: number;
-  /** The intermediate full-page screenshot (kept for inspection). */
+  /** Empty in live-video mode (no screenshot taken). */
   screenshotPath: string;
-  /** Device px of empty space removed by the de-pad pass (0 if none/disabled). */
+  /** Always 0 in live-video mode (no depad pass). */
   collapsedPx: number;
 }
 
 /**
- * Record a constant-speed scroll of `url` into a 1080×1920 mp4 at `outPath`.
- * Launches headless Chromium, captures one tall screenshot, and pans it with
- * FFmpeg. Caller owns `outPath`'s directory existence is handled here.
+ * Record a smooth browser scroll of `url` into a 1080×1920 mp4 at `outPath`.
+ * Playwright captures live browser rendering; FFmpeg scales to the APEX format.
  */
 export async function recordDemoScroll(
   input: RecordDemoScrollInput,
 ): Promise<RecordDemoScrollResult> {
   const fps = input.fps ?? DEFAULT_FPS;
-  const screenshotPath = input.screenshotPath ?? input.outPath.replace(/\.mp4$/i, '.page.png');
+  const totalDuration = input.durationSec ?? DEFAULT_DURATION_SEC;
+  const maxSpeedDevicePx = input.maxSpeedPxPerSec ?? DEFAULT_MAX_SPEED_DEVICE_PX;
+  const maxSpeedCssPx = maxSpeedDevicePx / DEVICE_SCALE;
 
   await mkdir(dirname(input.outPath), { recursive: true });
-  await mkdir(dirname(screenshotPath), { recursive: true });
+  const videoDir = await mkdtemp(join(tmpdir(), 'vidriera-rec-'));
 
-  // ── 1. Capture the full page ────────────────────────────────────────────
+  const scrollWindowSec = Math.max(0.5, totalDuration - SETTLE_BEFORE_SEC - PAUSE_BOTTOM_SEC);
+
   let browser: Browser | null = null;
+  let pageBodyHeightCss = 0;
+  let targetScrollCssPx = 0;
+
   try {
     browser = await chromium.launch({
       headless: true,
-      // --no-sandbox + --disable-dev-shm-usage make headless Chromium run inside
-      // the Railway container (non-root `node` user, small /dev/shm). Both are
-      // no-ops on a normal local machine, so the spike path is unaffected.
+      // --no-sandbox + --disable-dev-shm-usage keep headless Chromium alive inside
+      // the Railway container (non-root node user, small /dev/shm).
       args: ['--hide-scrollbars', '--no-sandbox', '--disable-dev-shm-usage'],
     });
+
     const context = await browser.newContext({
       viewport: { width: VIEWPORT_CSS_W, height: VIEWPORT_CSS_H },
       deviceScaleFactor: DEVICE_SCALE,
-      // Render the page in its calm, final state: respect reduced-motion and
-      // freeze CSS animations to their end frame when we shoot.
-      reducedMotion: 'reduce',
+      // Live video capture — no reducedMotion, animations run as authored.
+      recordVideo: {
+        dir: videoDir,
+        size: { width: VIEWPORT_CSS_W, height: VIEWPORT_CSS_H },
+      },
     });
-    // tsx/esbuild (keepNames) wraps functions sent to page.evaluate() in
-    // __name(...) calls that don't exist in the page world → shim it as identity.
+
+    // tsx/esbuild (keepNames) wraps evaluate() callbacks in __name() calls that
+    // don't exist in the page world → shim as identity so they don't throw.
     await context.addInitScript(() => {
       const g = globalThis as unknown as { __name?: (fn: unknown) => unknown };
       if (!g.__name) g.__name = (fn) => fn;
     });
+
     const page = await context.newPage();
 
     await page.goto(input.url, { waitUntil: 'load', timeout: 60_000 });
-    // networkidle is best-effort — sites with long-poll/analytics never idle.
     await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
 
-    // Collapse entrance animations/transitions to ~instant so scroll-reveal
-    // sections land on their final (visible) frame instead of being captured
-    // mid-fade. Pairs with the opacity sweep below for JS-driven reveals.
-    await page.addStyleTag({
-      content:
-        '*,*::before,*::after{animation-duration:.001s!important;animation-delay:0s!important;' +
-        'transition-duration:.001s!important;transition-delay:0s!important;scroll-behavior:auto!important}',
-    });
-
-    // Trigger lazy images + scroll-reveal animations, then return to the top.
-    await primePage(page);
-
-    // Belt-and-suspenders for JS reveals (framer-motion `whileInView`, etc.):
-    // force any element left semi-transparent to fully visible. Opacity only —
-    // we deliberately leave transforms alone so we don't displace UI.
-    await page.evaluate(() => {
-      for (const el of Array.from(document.body.querySelectorAll('*'))) {
-        if (parseFloat(getComputedStyle(el).opacity) < 1) {
-          (el as HTMLElement).style.setProperty('opacity', '1', 'important');
-        }
-      }
-    });
-
-    // Web fonts in before the shot (avoid capturing a fallback-font flash).
+    // Wait for web fonts and hero animations to settle before scrolling.
     await page.evaluate(() => (document as Document & { fonts?: FontFaceSet }).fonts?.ready);
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(SETTLE_BEFORE_SEC * 1000);
 
-    await page.screenshot({
-      path: screenshotPath,
-      fullPage: true,
-      animations: 'disabled',
-      type: 'png',
-      timeout: 60_000,
-    });
+    // Read page dimensions (CSS px).
+    const dims = await page.evaluate(() => ({
+      bodyHeight: document.body.scrollHeight,
+      maxScroll: Math.max(0, document.body.scrollHeight - window.innerHeight),
+    }));
+    pageBodyHeightCss = dims.bodyHeight;
+
+    // Cap scroll distance so tall pages don't race through in `durationSec`.
+    const maxScrollCssPxTotal = maxSpeedCssPx * scrollWindowSec;
+    targetScrollCssPx = Math.min(dims.maxScroll, maxScrollCssPxTotal);
+
+    if (targetScrollCssPx > 0) {
+      // Linear scroll anchored to real clock (performance.now), driven by rAF.
+      await page.evaluate(
+        async ({ targetPx, durationMs }: { targetPx: number; durationMs: number }) => {
+          const start = performance.now();
+          await new Promise<void>((resolve) => {
+            const tick = () => {
+              const t = Math.min((performance.now() - start) / durationMs, 1);
+              window.scrollTo(0, Math.round(targetPx * t));
+              if (t < 1) requestAnimationFrame(tick);
+              else resolve();
+            };
+            requestAnimationFrame(tick);
+          });
+        },
+        { targetPx: targetScrollCssPx, durationMs: scrollWindowSec * 1000 },
+      );
+    } else {
+      // Page fits in viewport — hold at top for the scroll window.
+      await page.waitForTimeout(scrollWindowSec * 1000);
+    }
+
+    // Brief hold at the bottom.
+    await page.waitForTimeout(PAUSE_BOTTOM_SEC * 1000);
+
+    // Close page → video path becomes available.
+    await page.close();
+    const rawVideoPath = await page.video()!.path();
+
+    // Close context → WebM is guaranteed written to disk.
+    await context.close();
+
+    // Scale 540×960 WebM → 1080×1920 H.264 mp4 (APEX standard).
+    await runFfmpeg([
+      '-y',
+      '-i', rawVideoPath,
+      '-vf', `scale=${OUT_W}:${OUT_H},format=yuv420p`,
+      '-r', String(fps),
+      '-c:v', 'libx264',
+      '-preset', X264_PRESET,
+      '-crf', '18',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      input.outPath,
+    ]);
   } finally {
     await browser?.close();
   }
 
-  // ── 2. Collapse big empty bands so the scroll stays content-dense ───────
-  const depadded = await depadScreenshot(screenshotPath, input.depad === false);
-  const panSource = depadded.path;
-
-  // ── 3. Normalise dimensions + compute the pan ──────────────────────────
-  const shot = await probeDimensions(panSource);
-  const needScale = shot.width !== OUT_W;
-  const pageHeightPx = needScale ? Math.round((shot.height * OUT_W) / shot.width) : shot.height;
-  const panDistance = pageHeightPx - OUT_H;
-  if (panDistance <= 0) {
-    throw new Error(
-      `page too short to scroll: captured ${OUT_W}×${pageHeightPx}, need height > ${OUT_H}. ` +
-        `(${input.url})`,
-    );
-  }
-
-  const durationSec =
-    input.durationSec ??
-    (input.speedPxPerSec ? panDistance / input.speedPxPerSec : DEFAULT_DURATION_SEC);
-  const frames = Math.max(2, Math.round(durationSec * fps));
-  const durFinal = frames / fps;
-
-  // Optional speed cap: instead of always traversing the WHOLE page over durFinal
-  // (which races on tall pages), limit the panned distance so the speed never
-  // exceeds maxSpeedPxPerSec — the clip then shows the TOP portion of a tall page
-  // at a calm constant speed. Unset → effectivePan = panDistance (unchanged).
-  const cap = input.maxSpeedPxPerSec;
-  const effectivePan = cap && cap > 0 ? Math.min(panDistance, cap * durFinal) : panDistance;
-  const ratePxPerSec = effectivePan / durFinal; // constant speed over the clip
-
-  // Crop a 1080×1920 window whose y grows linearly. min() clamps the final
-  // sub-frame so we never read out of bounds (leave a 2px safety margin for the
-  // width-normalise rounding). No division in the expression, no `/N:` form.
-  const maxOffset = Math.max(0, effectivePan - 2);
-  const cropY = `min(${ratePxPerSec.toFixed(4)}*t\\,${maxOffset})`;
-  const vf =
-    (needScale ? `scale=${OUT_W}:-2,` : '') +
-    `crop=${OUT_W}:${OUT_H}:0:${cropY},format=yuv420p`;
-
-  // ── 4. Render the pan ──────────────────────────────────────────────────
-  await runFfmpeg([
-    '-y',
-    '-loop', '1',
-    '-framerate', String(fps),
-    '-t', durFinal.toFixed(3),
-    '-i', panSource,
-    '-vf', vf,
-    '-r', String(fps),
-    '-c:v', 'libx264',
-    '-preset', X264_PRESET,
-    '-crf', '18',
-    '-pix_fmt', 'yuv420p',
-    '-movflags', '+faststart',
-    input.outPath,
-  ]);
+  const actualDuration = await probeDurationSec(input.outPath);
+  const effectiveSpeedDevicePx =
+    targetScrollCssPx > 0 ? (targetScrollCssPx * DEVICE_SCALE) / scrollWindowSec : 0;
 
   return {
     outPath: input.outPath,
-    durationSec: durFinal,
+    durationSec: actualDuration,
     width: OUT_W,
     height: OUT_H,
     fps,
-    pageHeightPx,
-    panSpeedPxPerSec: ratePxPerSec,
-    screenshotPath,
-    collapsedPx: depadded.collapsedPx,
+    pageHeightPx: pageBodyHeightCss * DEVICE_SCALE,
+    panSpeedPxPerSec: effectiveSpeedDevicePx,
+    screenshotPath: '',
+    collapsedPx: 0,
   };
 }
 
-/**
- * Scroll the page top→bottom in steps (firing IntersectionObserver reveals and
- * loading lazy images), wait for those images to settle, then scroll back up.
- */
-async function primePage(page: import('playwright').Page): Promise<void> {
-  await page.evaluate(async () => {
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    const step = Math.max(300, Math.floor(window.innerHeight * 0.8));
-    const maxY = () => document.body.scrollHeight - window.innerHeight;
-    for (let y = 0; y < maxY(); y += step) {
-      window.scrollTo(0, y);
-      await sleep(120);
-    }
-    window.scrollTo(0, maxY());
-    await sleep(400);
-    // Wait for any images that started loading during the pass.
-    await Promise.all(
-      Array.from(document.images)
-        .filter((img) => !img.complete)
-        .map(
-          (img) =>
-            new Promise<void>((res) => {
-              img.addEventListener('load', () => res(), { once: true });
-              img.addEventListener('error', () => res(), { once: true });
-            }),
-        ),
-    );
-    window.scrollTo(0, 0);
-    await sleep(400);
-  });
-}
-
-// Empty-band collapse tunables.
-const DEPAD_MIN_GAP = 520; // device px — only bands at least this tall collapse
-const DEPAD_BREATH = 150; // device px each collapsed band keeps (a small breath)
-const DEPAD_EDGE_EMPTY = 3; // per-row edge energy at/below this = "empty"
-
-/**
- * Collapse tall empty bands (large flat gaps with no content) in a full-page
- * screenshot down to a small fixed "breath", re-stitching the kept slices with
- * one FFmpeg vstack. Detection is background-agnostic: it profiles per-row edge
- * energy (edgedetect → averaged to a 1px column), so it works on dark and light
- * themes alike. Returns the source untouched when nothing big is found.
- */
-async function depadScreenshot(
-  src: string,
-  disabled: boolean,
-): Promise<{ path: string; collapsedPx: number }> {
-  if (disabled) return { path: src, collapsedPx: 0 };
-
-  const { width, height } = await probeDimensions(src);
-  // Per-row edge energy: edges→bright, flat background→~0, averaged to width 1.
-  const profile = await runRaw(FFMPEG, [
-    '-v', 'error',
-    '-i', src,
-    '-vf', 'format=gray,edgedetect=low=0.1:high=0.3,format=gray,scale=1:ih',
-    '-f', 'rawvideo',
-    '-pix_fmt', 'gray',
-    '-',
-  ]);
-  const rows = Math.min(profile.length, height);
-
-  // Maximal runs of empty rows that are tall enough to be worth collapsing.
-  const gaps: Array<{ start: number; end: number }> = [];
-  let runStart = -1;
-  for (let y = 0; y < rows; y++) {
-    const empty = (profile[y] ?? 255) <= DEPAD_EDGE_EMPTY;
-    if (empty && runStart < 0) runStart = y;
-    if ((!empty || y === rows - 1) && runStart >= 0) {
-      const end = empty ? y + 1 : y; // exclusive
-      if (end - runStart >= DEPAD_MIN_GAP) gaps.push({ start: runStart, end });
-      runStart = -1;
-    }
-  }
-  if (gaps.length === 0) return { path: src, collapsedPx: 0 };
-
-  // Kept slices: content between gaps + a BREATH-tall slice cropped from inside
-  // each gap (so the bg colour/gradient is preserved, not a hard cut).
-  const slices: Array<{ y: number; h: number }> = [];
-  let cursor = 0;
-  let collapsedPx = 0;
-  for (const g of gaps) {
-    if (g.start > cursor) slices.push({ y: cursor, h: g.start - cursor });
-    const breath = Math.min(DEPAD_BREATH, g.end - g.start);
-    slices.push({ y: g.start, h: breath });
-    collapsedPx += g.end - g.start - breath;
-    cursor = g.end;
-  }
-  if (cursor < height) slices.push({ y: cursor, h: height - cursor });
-
-  // One split → per-slice crop → vstack, all from the same source image.
-  const n = slices.length;
-  const splitLabels = slices.map((_, i) => `[a${i}]`).join('');
-  const crops = slices.map((s, i) => `[a${i}]crop=${width}:${s.h}:0:${s.y}[s${i}]`).join(';');
-  const stackInputs = slices.map((_, i) => `[s${i}]`).join('');
-  const fc = `[0:v]split=${n}${splitLabels};${crops};${stackInputs}vstack=inputs=${n}[o]`;
-
-  const dst = src.replace(/\.png$/i, '.depad.png');
-  await runFfmpeg([
-    '-v', 'error',
-    '-i', src,
-    '-filter_complex', fc,
-    '-map', '[o]',
-    '-frames:v', '1',
-    dst,
-  ]);
-  return { path: dst, collapsedPx };
-}
-
-// ── FFmpeg / FFprobe helpers ─────────────────────────────────────────────
+// ── FFmpeg / FFprobe helpers ─────────────────────────────────────────────────
 
 export async function probeDimensions(file: string): Promise<{ width: number; height: number }> {
   const out = await run(FFPROBE, [
@@ -418,22 +275,6 @@ function run(bin: string, args: string[]): Promise<string> {
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) resolve(stdout);
-      else reject(new Error(`${bin} exited ${code}\n${stderr.slice(-2000)}`));
-    });
-  });
-}
-
-/** Spawn a binary and resolve its raw stdout as a Buffer (rejects non-zero). */
-function runRaw(bin: string, args: string[]): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { windowsHide: true });
-    const chunks: Buffer[] = [];
-    let stderr = '';
-    child.stdout.on('data', (d) => chunks.push(d as Buffer));
-    child.stderr.on('data', (d) => (stderr += d.toString()));
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code === 0) resolve(Buffer.concat(chunks));
       else reject(new Error(`${bin} exited ${code}\n${stderr.slice(-2000)}`));
     });
   });
