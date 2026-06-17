@@ -32,6 +32,8 @@ import { generateVideoProjectAware } from './functions/generate-video-project-aw
 import { sweepStuckCarousels } from './functions/sweep-stuck-carousels.js';
 import { vidrieraOrchestrator } from './functions/vidriera-orchestrator.js';
 import { publishToLinkedIn } from './functions/publish-to-linkedin.js';
+import { publishToFacebook } from './functions/publish-to-facebook.js';
+import { publishToYouTube } from './functions/publish-to-youtube.js';
 
 export {
   parseProjectFile,
@@ -58,6 +60,8 @@ export {
   sweepStuckCarousels,
   vidrieraOrchestrator,
   publishToLinkedIn,
+  publishToFacebook,
+  publishToYouTube,
 };
 
 export const functions = [
@@ -85,4 +89,6 @@ export const functions = [
   sweepStuckCarousels,
   vidrieraOrchestrator,
   publishToLinkedIn,
+  publishToFacebook,
+  publishToYouTube,
 ] as const;

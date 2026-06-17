@@ -37,6 +37,7 @@ export const META_OAUTH_SCOPES = [
   'instagram_content_publish',
   'pages_show_list',
   'pages_read_engagement',
+  'pages_manage_posts',
   'business_management',
 ].join(',');
 

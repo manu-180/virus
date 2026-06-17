@@ -49,6 +49,11 @@ const IG_ACCOUNT_ID = '52c60dd6-23e9-4131-aa3f-47adef5c44b3';
 // LinkedIn account para publicar el mismo video. Set via env var una vez conectada la cuenta.
 // Si no está configurado, el paso de LinkedIn se saltea silenciosamente.
 const LI_ACCOUNT_ID = process.env['VIDRIERA_LI_ACCOUNT_ID'] ?? null;
+// Facebook: reutiliza la cuenta IG (mismo token, mismo graph_page_id). Requiere scope
+// `pages_manage_posts` en la cuenta; y que sea true en la env para activarse.
+const FB_ENABLED    = process.env['VIDRIERA_FB_ENABLED'] === 'true';
+// YouTube: cuenta conectada vía OAuth Google. Set via env var una vez conectada.
+const YT_ACCOUNT_ID = process.env['VIDRIERA_YT_ACCOUNT_ID'] ?? null;
 const VIDEOS_BUCKET = 'videos';
 // Silent tail after the narration (formato-video-apex): the scroll keeps moving
 // ~1.8s in silence; editor_machine trims the narrated part to the VO length.
@@ -307,7 +312,62 @@ export const vidrieraOrchestrator = inngest.createFunction(
           }
         }
 
-        // 3n. Best-effort cleanup del video de IG (Meta mantiene su copia).
+        // 3n. Facebook: si está habilitado, reutilizamos la cuenta IG (el publisher
+        //     usa ig_account_get_graph_token para obtener el Page access token y el
+        //     graph_page_id). Requiere que la cuenta haya sido reconectada con el
+        //     scope `pages_manage_posts` (ver web/src/lib/instagram-graph.ts).
+        if (FB_ENABLED) {
+          const fbObjectPath = `vidriera-fb/${safeSlug}-${Date.now()}.mp4`;
+          const fbUp = await vh.storage
+            .from(VIDEOS_BUCKET)
+            .upload(fbObjectPath, finalBytes, { contentType: 'video/mp4', upsert: true });
+          if (!fbUp.error) {
+            await inngest.send({
+              name: 'vidriera/facebook.publish.requested',
+              data: {
+                demoId:        demo.id,
+                demoSlug:      demo.slug,
+                storagePath:   fbObjectPath,
+                caption,
+                title:         demo.titulo,
+                igAccountId:   IG_ACCOUNT_ID,
+                reelPermalink: reel.permalink,
+              },
+            }).catch((err: unknown) => {
+              logger.warn('vidriera.facebook_event_failed', { error: String(err) });
+            });
+          } else {
+            logger.warn('vidriera.facebook_upload_failed', { error: fbUp.error.message });
+          }
+        }
+
+        // 3o. YouTube Shorts: misma lógica — copy al bucket → evento asíncrono.
+        if (YT_ACCOUNT_ID) {
+          const ytObjectPath = `vidriera-yt/${safeSlug}-${Date.now()}.mp4`;
+          const ytUp = await vh.storage
+            .from(VIDEOS_BUCKET)
+            .upload(ytObjectPath, finalBytes, { contentType: 'video/mp4', upsert: true });
+          if (!ytUp.error) {
+            await inngest.send({
+              name: 'vidriera/youtube.publish.requested',
+              data: {
+                demoId:        demo.id,
+                demoSlug:      demo.slug,
+                storagePath:   ytObjectPath,
+                caption,
+                title:         demo.titulo,
+                ytAccountId:   YT_ACCOUNT_ID,
+                reelPermalink: reel.permalink,
+              },
+            }).catch((err: unknown) => {
+              logger.warn('vidriera.youtube_event_failed', { error: String(err) });
+            });
+          } else {
+            logger.warn('vidriera.youtube_upload_failed', { error: ytUp.error.message });
+          }
+        }
+
+        // 3p. Best-effort cleanup del video de IG (Meta mantiene su copia).
         await vh.storage.from(VIDEOS_BUCKET).remove([objectPath]).catch(() => {});
 
         logger.info('vidriera.published', { demo: demo.slug, reel: reel.permalink, story: story?.permalink ?? null });

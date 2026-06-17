@@ -28,7 +28,37 @@ export interface VidreiraLinkedinPublishRequestedEvent {
   };
 }
 
+export interface VidrieraFacebookPublishRequestedEvent {
+  name: 'vidriera/facebook.publish.requested';
+  data: {
+    demoId:        string;
+    demoSlug:      string;
+    /** Path en el bucket `videos` de VHIRUS. El publisher lo borra tras subir a Facebook. */
+    storagePath:   string;
+    caption:       string;
+    title:         string;
+    igAccountId:   string;
+    reelPermalink: string | null;
+  };
+}
+
+export interface VidrieraYoutubePublishRequestedEvent {
+  name: 'vidriera/youtube.publish.requested';
+  data: {
+    demoId:       string;
+    demoSlug:     string;
+    /** Path en el bucket `videos` de VHIRUS. El publisher lo borra tras subir a YouTube. */
+    storagePath:  string;
+    caption:      string;
+    title:        string;
+    ytAccountId:  string;
+    reelPermalink: string | null;
+  };
+}
+
 export type VidrieraEvents = {
-  'vidriera/run.requested':           VidrieraRunRequestedEvent;
-  'vidriera/linkedin.publish.requested': VidreiraLinkedinPublishRequestedEvent;
+  'vidriera/run.requested':               VidrieraRunRequestedEvent;
+  'vidriera/linkedin.publish.requested':  VidreiraLinkedinPublishRequestedEvent;
+  'vidriera/facebook.publish.requested':  VidrieraFacebookPublishRequestedEvent;
+  'vidriera/youtube.publish.requested':   VidrieraYoutubePublishRequestedEvent;
 };

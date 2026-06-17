@@ -837,3 +837,54 @@ export async function debugToken(
 export function buildAppAccessToken(appId: string, appSecret: string): string {
   return `${appId}|${appSecret}`;
 }
+
+// ── Facebook Pages — Video publish ────────────────────────────────────
+
+export interface FbPageVideoInput {
+  /** Facebook Page ID (numeric, graph_page_id en ig_accounts) */
+  pageId:      string;
+  /** Long-lived page access token (el mismo que se usa para IG) */
+  accessToken: string;
+  /** URL HTTPS pública del video MP4 — Meta lo descarga server-side */
+  videoUrl:    string;
+  /** Descripción / caption del post */
+  description: string;
+}
+
+export interface FbPageVideoResult {
+  videoId:   string;
+  /** Permalink de Facebook al post del video */
+  permalink: string | null;
+}
+
+/**
+ * Publica un video en una Facebook Page usando el endpoint `/{page-id}/videos`.
+ *
+ * Meta descarga el video desde `videoUrl` de forma asíncrona; la llamada
+ * retorna sincrónicamente con el `id` del video una vez aceptado.
+ *
+ * Requiere el scope `pages_manage_posts` en el token (agregado al flujo
+ * OAuth de IG en web/src/lib/instagram-graph.ts — reconectar la cuenta
+ * si el token fue emitido antes de este cambio).
+ */
+export async function publishVideoToFacebookPage(
+  input: FbPageVideoInput,
+): Promise<FbPageVideoResult> {
+  const { pageId, accessToken, videoUrl, description } = input;
+
+  const res = await graphCall<{ id: string }>(
+    'POST',
+    `/${pageId}/videos`,
+    {
+      file_url:     videoUrl,
+      description,
+      published:    'true',
+      access_token: accessToken,
+    },
+  );
+
+  return {
+    videoId:   res.id,
+    permalink: `https://www.facebook.com/${pageId}/videos/${res.id}`,
+  };
+}
