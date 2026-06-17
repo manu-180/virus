@@ -4,7 +4,7 @@ export { DEFAULT_POLICY, getProjectPolicy } from '@virus/shared/viral';
 
 import type { SuggestOutput, ProjectPatterns, ProjectBrand } from '@virus/shared/viral';
 import { suggest } from '@virus/shared/viral';
-import { getRecentSignatures } from './anti-repeat-query.js';
+import { getRecentSignatures, type RecentSignature } from './anti-repeat-query.js';
 import { findSemanticDuplicates } from './anti-repeat-similarity.js';
 
 export interface SuggestWithAntiRepeatInput {
@@ -19,7 +19,7 @@ export async function suggestWithAntiRepeat(
 ): Promise<SuggestOutput | { ok: false; error: 'no_candidates' }> {
   const { patterns, brand, projectId, policy } = input;
 
-  let recent;
+  let recent: RecentSignature[];
   try {
     recent = await getRecentSignatures({
       projectId,

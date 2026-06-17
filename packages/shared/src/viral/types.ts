@@ -93,7 +93,7 @@ export interface ProjectPatterns {
   visualElements: VisualElement[];
   ctaTemplates: string[];
   hashtags: HashtagSet;
-  captionTemplates: Record<CaptionTemplate, string>;
+  captionTemplates: Partial<Record<CaptionTemplate, string>>;
   language: string;
   parsedAt: string;
   rawSource?: string;

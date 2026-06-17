@@ -3,31 +3,7 @@ declare module '*.md?raw' {
   export default content;
 }
 
-// Optional peer dependency — not installed by default.
-// Declared here so that the dynamic import() in whisper-fallback.ts
-// type-checks without requiring the package to be installed.
-declare module 'nodejs-whisper' {
-  interface WhisperWordTimestamp {
-    word: string;
-    start: number;
-    end: number;
-  }
-
-  interface WhisperSegment {
-    start: number;
-    end: number;
-    text: string;
-    word_timestamps?: WhisperWordTimestamp[];
-  }
-
-  interface WhisperResult {
-    segments: WhisperSegment[];
-  }
-
-  function nodewhisper(
-    audioPath: string,
-    opts: Record<string, unknown>,
-  ): Promise<WhisperResult>;
-
-  export = nodewhisper;
-}
+// NOTE: the optional `nodejs-whisper` peer dependency is loaded via an indirect
+// dynamic import in src/captions/whisper-fallback.ts, so no ambient module
+// declaration is needed — it type-checks in every package (e.g. @virus/worker)
+// whether or not the package is installed.

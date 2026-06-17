@@ -6,8 +6,6 @@ import { groupWordsIntoLines } from './segment-mapper.js';
 
 // ---------------------------------------------------------------------------
 // nodejs-whisper expected output types (best-effort, version-dependent)
-// The module declaration lives in src/raw-modules.d.ts so TypeScript accepts
-// the dynamic import without requiring the package to be installed.
 // ---------------------------------------------------------------------------
 
 interface WhisperWordTimestamp {
@@ -35,7 +33,13 @@ type WhisperFn = (audioPath: string, opts: Record<string, unknown>) => Promise<W
 
 async function loadWhisper(): Promise<WhisperFn> {
   try {
-    const mod = await import('nodejs-whisper');
+    // nodejs-whisper is an optional peer dependency that may not be installed.
+    // The indirect specifier keeps TypeScript from resolving the module at
+    // compile time (so consumers like @virus/worker type-check without it
+    // installed) while still importing it at runtime when present. The result
+    // is cast to the locally-defined WhisperFn, so we lose no useful typing.
+    const moduleName = 'nodejs-whisper';
+    const mod = await import(moduleName);
     // nodejs-whisper exports { nodewhisper } as named export
     const fn = (mod as Record<string, unknown>)['nodewhisper'] ?? (mod as Record<string, unknown>)['default'];
     if (typeof fn !== 'function') {
