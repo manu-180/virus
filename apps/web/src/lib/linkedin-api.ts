@@ -19,7 +19,6 @@ export const LI_OAUTH_SCOPES = [
   'openid',
   'profile',
   'w_member_social',
-  'offline_access',
 ].join(' ');
 
 const LI_OAUTH_BASE = 'https://www.linkedin.com/oauth/v2';
