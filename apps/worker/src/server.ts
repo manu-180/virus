@@ -24,6 +24,14 @@ config({ path: resolve(process.cwd(), '.env.local'), override: true });
 // carousel_image_assets. Embedding now has its own try-catch so the row is
 // always inserted (embedding: null if the API is down) and the embed error
 // surfaces in logs as warn:embed_failed instead of being swallowed.
+//
+// 2026-06-21 redeploy: ships the node:https rewrite of callClaude
+// (packages/shared/src/ai/anthropic.ts). The Railway worker was getting a
+// PERSISTENT undici "Premature close" from api.anthropic.com (plain
+// curl/native-https to the same endpoint+key+model worked), which killed every
+// vidriera run at the copy step. callClaude now talks to Anthropic over Node's
+// native https (no undici). Shared-only diff → this marker forces the worker
+// redeploy so the fix actually lands.
 
 import http from 'node:http';
 import { serve } from 'inngest/node';
