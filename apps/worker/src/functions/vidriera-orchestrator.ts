@@ -241,37 +241,59 @@ export const vidrieraOrchestrator = inngest.createFunction(
       const workDir = await mkdtemp(join(tmpdir(), `vidriera-${safeSlug}-`));
 
       try {
-        // 3a. Copy: VO script + caption (client-style, never "demo").
-        const script = await generateVoScript(demo);
-        const caption = await generateCaption(demo);
+        // 3a-3d are all IDEMPOTENT (they produce temp files / strings, nothing is
+        //     published yet) so each external call is wrapped in bounded retries:
+        //     a transient blip in ANY of them — e.g. Anthropic "Premature close",
+        //     an ElevenLabs hiccup, an editor_machine cold start — would otherwise
+        //     kill the whole retries:0 run (as it did on 2026-06-21). Light API
+        //     calls get 3 tries; the heavy media steps (scroll, 2× render) get 2.
+
+        // 3a. Copy: VO script + caption (client-style, never "demo"). Anthropic.
+        const script = await withRetries(() => generateVoScript(demo), 3, 4000);
+        const caption = await withRetries(() => generateCaption(demo), 3, 4000);
         logger.info('vidriera.copy_ready', { demo: demo.slug, scriptChars: script.length });
 
-        // 3b. Voice-over (female AR voice → env).
-        const audio = await generateAudioFromScript({
-          segments: [{ voiceover: script }],
-          preset: VOICE_PRESETS['educational']!,
-          outputDir: join(workDir, 'vo'),
-          voiceId,
-          speedMultiplier: VO_SPEED_MULTIPLIER,
-        });
+        // 3b. Voice-over (female AR voice → env). ElevenLabs.
+        const audio = await withRetries(
+          () =>
+            generateAudioFromScript({
+              segments: [{ voiceover: script }],
+              preset: VOICE_PRESETS['educational']!,
+              outputDir: join(workDir, 'vo'),
+              voiceId,
+              speedMultiplier: VO_SPEED_MULTIPLIER,
+            }),
+          3,
+          4000,
+        );
 
-        // 3c. Record the scroll, duration-anchored to VO + tail.
+        // 3c. Record the scroll, duration-anchored to VO + tail. Playwright + URL.
         const scrollPath = join(workDir, 'scroll.mp4');
-        await recordDemoScroll({
-          url,
-          outPath: scrollPath,
-          durationSec: audio.durationSec + TAIL_SEC,
-          maxSpeedPxPerSec: CALM_PX_PER_SEC,
-        });
+        await withRetries(
+          () =>
+            recordDemoScroll({
+              url,
+              outPath: scrollPath,
+              durationSec: audio.durationSec + TAIL_SEC,
+              maxSpeedPxPerSec: CALM_PX_PER_SEC,
+            }),
+          2,
+          3000,
+        );
 
-        // 3d. editor_machine: trim to VO + burn karaoke-cyan subtitles.
+        // 3d. editor_machine: trim to VO + burn karaoke-cyan subtitles. Remote svc.
         const renderPath = join(workDir, 'render.mp4');
-        await submitEditorJobExactSubs({
-          videoPath: scrollPath,
-          audioPath: audio.processedMp3,
-          outPath: renderPath,
-          subtitleScript: script,
-        });
+        await withRetries(
+          () =>
+            submitEditorJobExactSubs({
+              videoPath: scrollPath,
+              audioPath: audio.processedMp3,
+              outPath: renderPath,
+              subtitleScript: script,
+            }),
+          2,
+          5000,
+        );
 
         // 3e. Outro + crossfade → the final reel.
         const finalPath = join(workDir, 'final.mp4');
