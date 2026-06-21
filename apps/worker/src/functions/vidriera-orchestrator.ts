@@ -1,10 +1,12 @@
 /// <reference types="node" />
 /**
- * Vidriera-Video orchestrator (FASE HORNO C4) — the weekly cron that turns the
- * next built demo into a Reel + Story on @apex.stack, 100% automatically.
+ * Vidriera-Video orchestrator (FASE HORNO C4) — the cron that turns the next
+ * built demo into a Reel + Story on @apex.stack, 100% automatically.
  *
- * Trigger: Saturday 08:00 ART cron, plus a manual `vidriera/run.requested` event
- * (with optional `{ dryRun: true }` to build + check WITHOUT publishing).
+ * Trigger: a DAILY 09:00 ART cron, gated in the handler down to "one Reel every
+ * ~2 days at a random time between 09:00 and 14:00 ART" (see CADENCE below),
+ * plus a manual `vidriera/run.requested` event (with optional `{ dryRun: true }`
+ * to build + check WITHOUT publishing) that bypasses the gates and runs now.
  *
  * Flow (mirrors the spike drivers — see libre_albedrio/tools/vidriera-video.md §9):
  *   1. select-demo   — FIFO: oldest built demo with a live URL, not promoted.
@@ -19,7 +21,7 @@
  * process) and the function is retries:0 + concurrency:1, because an Instagram
  * publish is not idempotent (can't be un-published) and re-recording on retry
  * would be wasteful. A failed run records demos.promo_error and alerts; the demo
- * stays queued for a manual re-invoke or next Saturday.
+ * stays queued for a manual re-invoke or the next cron run.
  */
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -34,13 +36,14 @@ import {
   markDemoPromoted,
   markDemoError,
   logActivity,
+  mostRecentPromotedAt,
 } from '../lib/libre-albedrio.js';
 import { generateVoScript, generateCaption } from '../lib/vidriera-copy.js';
 import { evaluateFailSafes } from '../lib/vidriera-checks.js';
 import { recordDemoScroll, probeDurationSec, probeHasAudioStream } from '../lib/recorder.js';
 import { submitEditorJobExactSubs } from '../lib/editor-machine.js';
 import { composeWithOutro } from '../lib/compose.js';
-import { publishReel, publishVideoStory } from '../lib/instagram-graph.js';
+import { publishReel, publishVideoStory, InstagramGraphError } from '../lib/instagram-graph.js';
 import { generateAudioFromScript, VOICE_PRESETS } from '@virus/shared/audio';
 import { captureWorkerException } from '../utils/sentry.js';
 
@@ -64,8 +67,20 @@ const VO_SPEED_MULTIPLIER = 1.0;
 // Calm scroll: cap the pan speed so a tall demo page shows its TOP at a calm
 // constant speed instead of racing the whole page (same feel as the assistify tour).
 const CALM_PX_PER_SEC = 195;
-// Saturday 08:00 Argentina time (spec §0.6 cadence: one web/week → one Reel/week).
-const CRON = 'TZ=America/Argentina/Buenos_Aires 0 8 * * 6';
+// Cadence (Manuel 2026-06-21): one Reel every ~2 days at a RANDOM time between
+// 09:00 and 14:00 ART. A daily 09:00 ART cron does the waking; two gates in the
+// handler shape it — (a) a cooldown so we only actually publish every other day,
+// and (b) a random in-window sleep so the post time is never fixed. Manual
+// `vidriera/run.requested` events bypass BOTH gates and publish immediately.
+const CRON = 'TZ=America/Argentina/Buenos_Aires 0 9 * * *';
+// Publish only when the last successful Reel went out ≥ this many hours ago. With
+// the daily cron this yields every-other-day: yesterday's post is ≤24h (skip),
+// the day before is ≥43h (publish). 40h sits cleanly in that gap. Measured on
+// SUCCESS, so a failed day (no promoted_at) just retries on the next run.
+const COOLDOWN_HOURS = 40;
+// Random spread added on top of 09:00 ART: 0..285 min ⇒ the publish kicks off by
+// ~13:45 and finishes inside the 09:00–14:00 window Manuel asked for.
+const WINDOW_MINUTES = 285;
 
 interface IgTokenRow {
   access_token: string;
@@ -120,10 +135,43 @@ async function withRetries<T>(fn: () => Promise<T>, attempts = 3, delayMs = 1500
   throw lastError;
 }
 
+/**
+ * Publish a Reel, retrying ONLY on transient Graph errors. Meta's code-1
+ * "An unknown error has occurred." — which killed the first scheduled run on
+ * 2026-06-20 — is non-terminal and almost always clears on a quick retry. We do
+ * NOT retry network timeouts (httpStatus 0): those are ambiguous (the Reel might
+ * actually have landed) and a blind retry could double-post. Terminal errors
+ * (bad token, rejected content) fail fast so they surface instead of looping.
+ */
+async function publishReelResilient(
+  input: Parameters<typeof publishReel>[0],
+  logger: { warn(message: string, meta?: Record<string, unknown>): void },
+  attempts = 3,
+): Promise<Awaited<ReturnType<typeof publishReel>>> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await publishReel(input);
+    } catch (err) {
+      lastError = err;
+      const transient =
+        err instanceof InstagramGraphError && !err.info.terminal && err.info.httpStatus >= 400;
+      if (!transient || i === attempts - 1) throw err;
+      logger.warn('vidriera.publish_retry', {
+        attempt: i + 1,
+        metaCode: err instanceof InstagramGraphError ? err.info.metaCode ?? null : null,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      await new Promise((r) => setTimeout(r, 8_000 * (i + 1)));
+    }
+  }
+  throw lastError;
+}
+
 export const vidrieraOrchestrator = inngest.createFunction(
   {
     id: 'vidriera-orchestrator',
-    name: 'Vidriera-Video — weekly demo → Reel + Story to @apex.stack',
+    name: 'Vidriera-Video — demo → Reel + Story to @apex.stack (every ~2 days)',
     // One run at a time; never re-run a non-idempotent publish (see file header).
     concurrency: { limit: 1 },
     retries: 0,
@@ -134,7 +182,33 @@ export const vidrieraOrchestrator = inngest.createFunction(
   },
   [{ cron: CRON }, { event: 'vidriera/run.requested' }],
   async ({ event, step, logger }) => {
-    const dryRun = (event as unknown as { data?: { dryRun?: boolean } }).data?.dryRun === true;
+    // Manual runs (`vidriera/run.requested`) publish on demand and may dry-run;
+    // the daily cron (Inngest sends `inngest/scheduled.timer`) goes through the
+    // cadence gates below. Anything that is NOT the manual event is the cron.
+    const isManual = event.name === 'vidriera/run.requested';
+    const dryRun = isManual && (event as unknown as { data?: { dryRun?: boolean } }).data?.dryRun === true;
+
+    // ── 0. Cadence gates (cron only) — every ~2 days, random time 09:00–14:00 ─
+    if (!isManual) {
+      // 0a. Cooldown: skip unless the last successful Reel is old enough. A failed
+      //     day never stamps promoted_at, so it becomes eligible again next run.
+      const gate = await step.run('cooldown-gate', async () => {
+        const last = await mostRecentPromotedAt(libreAlbedrioClient());
+        const hoursSince = last ? (Date.now() - last.getTime()) / 3_600_000 : Infinity;
+        return { eligible: hoursSince >= COOLDOWN_HOURS, hoursSince: last ? Math.round(hoursSince) : null };
+      });
+      if (!gate.eligible) {
+        logger.info('vidriera.cooldown_skip', { hoursSince: gate.hoursSince, cooldownHours: COOLDOWN_HOURS });
+        return { published: false, reason: 'cooldown' as const };
+      }
+      // 0b. Random in-window offset so the post time is never fixed. Picked inside
+      //     a step (memoised) so Inngest replays stay deterministic.
+      const offsetMin = await step.run('pick-window-offset', async () =>
+        Math.floor(Math.random() * (WINDOW_MINUTES + 1)),
+      );
+      logger.info('vidriera.window_offset', { offsetMin });
+      if (offsetMin > 0) await step.sleep('within-window-jitter', `${offsetMin}m`);
+    }
 
     // ── 1. Select the next demo (FIFO, has live URL, not promoted) ──────────
     const demo = await step.run('select-demo', async () => {
@@ -261,7 +335,7 @@ export const vidrieraOrchestrator = inngest.createFunction(
         // 3j. Publish the Reel, then mark promoted IMMEDIATELY (with retries). The
         //     Reel is the canonical artifact: once it's live the demo MUST be
         //     marked, or any later failure would re-pick + re-post it next run.
-        const reel = await publishReel({ igUserId, accessToken, videoUrl, caption });
+        const reel = await publishReelResilient({ igUserId, accessToken, videoUrl, caption }, logger);
         await withRetries(() => markDemoPromoted(la, demo.id, reel.permalink));
 
         // 3k. Same video as a Story — strictly secondary (ephemeral, 24h). NEVER

@@ -58,6 +58,26 @@ export async function selectNextDemo(client: SupabaseClient): Promise<DemoRow | 
   return ((data ?? [])[0] as DemoRow | undefined) ?? null;
 }
 
+/**
+ * The most recent successful promotion time across all demos (max promoted_at),
+ * or null if nothing has ever been promoted. The orchestrator uses this as its
+ * cadence cooldown: it only publishes when the last Reel went out ≥ N hours ago,
+ * so a daily cron yields "one Reel every ~2 days" — and a FAILED day (which never
+ * stamps promoted_at) simply becomes eligible again on the next day's run.
+ */
+export async function mostRecentPromotedAt(client: SupabaseClient): Promise<Date | null> {
+  const { data, error } = await client
+    .from('demos')
+    .select('promoted_at')
+    .not('promoted_at', 'is', null)
+    .order('promoted_at', { ascending: false })
+    .limit(1);
+
+  if (error) throw new Error(`mostRecentPromotedAt failed: ${error.message}`);
+  const v = (data ?? [])[0]?.promoted_at as string | undefined;
+  return v ? new Date(v) : null;
+}
+
 /** Mark a demo as promoted: stamp the time + permalink and clear any prior error. */
 export async function markDemoPromoted(
   client: SupabaseClient,
