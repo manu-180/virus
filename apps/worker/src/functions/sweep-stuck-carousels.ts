@@ -1,7 +1,10 @@
 /**
  * sweep-stuck-carousels — scheduled Inngest function.
  *
- * Cron: every 2 minutes.
+ * Cron: every 30 minutes (was every 2 min — throttled 2026-07-23, Manuel: it
+ * was the single biggest consumer of the Inngest free-tier quota. This is a
+ * belt-and-suspenders sweep, not the primary watchdog, so a slower cadence
+ * is fine — see NOTE below).
  *
  * Goal: catch carousels whose pipeline stalled and the per-status watchdog on
  * the web side didn't fire (e.g. user closed the dashboard tab before the
@@ -38,7 +41,7 @@ interface Row {
 
 export const sweepStuckCarousels = inngest.createFunction(
   { id: 'sweep-stuck-carousels' },
-  { cron: '*/2 * * * *' },
+  { cron: '*/30 * * * *' },
   async ({ step }) => {
     const result = await step.run('sweep', async () => {
       const db = getAdminClient();

@@ -72,7 +72,7 @@ const CALM_PX_PER_SEC = 195;
 // handler shape it — (a) a cooldown so we only actually publish every other day,
 // and (b) a random in-window sleep so the post time is never fixed. Manual
 // `vidriera/run.requested` events bypass BOTH gates and publish immediately.
-const CRON = 'TZ=America/Argentina/Buenos_Aires 0 9 * * *';
+// const CRON = 'TZ=America/Argentina/Buenos_Aires 0 9 * * *'; // desactivado, ver trigger abajo
 // Publish only when the last successful Reel went out ≥ this many hours ago. With
 // the daily cron this yields every-other-day: yesterday's post is ≤24h (skip),
 // the day before is ≥43h (publish). 40h sits cleanly in that gap. Measured on
@@ -180,7 +180,10 @@ export const vidrieraOrchestrator = inngest.createFunction(
       captureWorkerException(error, { fn: 'vidriera-orchestrator' });
     },
   },
-  [{ cron: CRON }, { event: 'vidriera/run.requested' }],
+  // Cron DESACTIVADO (Manuel, 2026-07-23): no está andando bien y no se están
+  // subiendo páginas web por ahora. Queda solo el disparo manual por si se
+  // retoma más adelante — ver CRON arriba para reactivarlo.
+  [{ event: 'vidriera/run.requested' }],
   async ({ event, step, logger }) => {
     // Manual runs (`vidriera/run.requested`) publish on demand and may dry-run;
     // the daily cron (Inngest sends `inngest/scheduled.timer`) goes through the
