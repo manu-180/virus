@@ -72,7 +72,7 @@ const CALM_PX_PER_SEC = 195;
 // handler shape it — (a) a cooldown so we only actually publish every other day,
 // and (b) a random in-window sleep so the post time is never fixed. Manual
 // `vidriera/run.requested` events bypass BOTH gates and publish immediately.
-// const CRON = 'TZ=America/Argentina/Buenos_Aires 0 9 * * *'; // desactivado, ver trigger abajo
+const CRON = 'TZ=America/Argentina/Buenos_Aires 0 9 * * *';
 // Publish only when the last successful Reel went out ≥ this many hours ago. With
 // the daily cron this yields every-other-day: yesterday's post is ≤24h (skip),
 // the day before is ≥43h (publish). 40h sits cleanly in that gap. Measured on
@@ -180,10 +180,15 @@ export const vidrieraOrchestrator = inngest.createFunction(
       captureWorkerException(error, { fn: 'vidriera-orchestrator' });
     },
   },
-  // Cron DESACTIVADO (Manuel, 2026-07-23): no está andando bien y no se están
-  // subiendo páginas web por ahora. Queda solo el disparo manual por si se
-  // retoma más adelante — ver CRON arriba para reactivarlo.
-  [{ event: 'vidriera/run.requested' }],
+  // Cron reactivado (Hornero, 2026-07-28): estaba desactivado desde 2026-07-23 por
+  // cuota de Inngest (free tier al 83%) + un bloqueo real de ElevenLabs (402 Payment
+  // Required) que hacía fallar cada corrida. La cuota ya se resolvió bajando
+  // sweep-stuck-carousels de cada 2min a cada 30min (commit b51d451, mismo día). El
+  // bloqueo de ElevenLabs sigue activo (ver demos.promo_error en Atrio) — cada corrida
+  // seguirá fallando en la fase de TTS hasta que Manuel resuelva el pago/crédito de la
+  // cuenta ElevenLabs, pero el fallo es barato (log + no publica) y el cron necesita
+  // estar prendido para retomar solo apenas se arregle. Ver libre_albedrio/docs/INBOX.md.
+  [{ cron: CRON }, { event: 'vidriera/run.requested' }],
   async ({ event, step, logger }) => {
     // Manual runs (`vidriera/run.requested`) publish on demand and may dry-run;
     // the daily cron (Inngest sends `inngest/scheduled.timer`) goes through the
